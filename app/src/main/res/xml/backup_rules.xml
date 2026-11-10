@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- android:allowBackup is false (spec section 75: no cloud, no unnecessary data
+     collection), so this file is unused but kept for future opt-in backup config. -->
+<full-backup-content>
+</full-backup-content>
