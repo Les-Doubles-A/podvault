@@ -2,7 +2,7 @@ use crate::model::{Bookmark, Episode, Podcast, Preferences, SleepTimerMode};
 use crate::theme::Palette;
 use crate::ui::widgets::{
     accent_button, card_frame, cover_art, format_duration_ms, now_playing_bars, pill_badge,
-    CoverAccentCache,
+    CoverCache,
 };
 use crate::ui::{AppAction, Screen};
 use egui::{Color32, CornerRadius, Margin, RichText, ScrollArea, Slider, Stroke, Ui};
@@ -23,7 +23,7 @@ pub fn render_player_screen(
     sleep_timer: SleepTimerMode,
     queue_len: usize,
     prefs: &Preferences,
-    accent_cache: &mut CoverAccentCache,
+    covers: &mut CoverCache,
     actions: &mut Vec<AppAction>,
 ) {
     let Some(ep) = episode else {
@@ -48,7 +48,7 @@ pub fn render_player_screen(
 
     // Mode ambiance : halo teinté par la couleur dominante de la pochette
     if prefs.ambient_mode {
-        let dom = accent_cache.color_for(cover, p.accent);
+        let dom = covers.color_for(ui.ctx(), cover, p.accent);
         let rect = ui.available_rect_before_wrap();
         let tint = Color32::from_rgba_unmultiplied(dom.r(), dom.g(), dom.b(), 34);
         ui.painter().rect_filled(rect, CornerRadius::same(16), tint);
@@ -82,7 +82,7 @@ pub fn render_player_screen(
         ui.add_space(14.0);
 
         ui.vertical_centered(|ui| {
-            cover_art(ui, cover, ep.display_title(), 230.0, 16);
+            cover_art(ui, covers, cover, ep.display_title(), 230.0, 16);
             ui.add_space(14.0);
 
             ui.heading(RichText::new(ep.display_title()).size(22.0).strong());
@@ -311,6 +311,7 @@ pub fn render_player_screen(
 pub fn render_mini_player(
     ui: &mut Ui,
     p: Palette,
+    covers: &mut CoverCache,
     episode: &Episode,
     podcast: Option<&Podcast>,
     position_ms: i64,
@@ -345,7 +346,7 @@ pub fn render_mini_player(
             ui.add_space(6.0);
 
             ui.horizontal(|ui| {
-                let cov = cover_art(ui, cover, episode.display_title(), 44.0, 6);
+                let cov = cover_art(ui, covers, cover, episode.display_title(), 44.0, 6);
                 if cov.clicked() {
                     actions.push(AppAction::Navigate(Screen::Player));
                 }

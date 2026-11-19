@@ -82,8 +82,8 @@ Compose restent à réaliser.
 ### Windows (Rust)
 
 Téléchargez depuis la [dernière release](https://github.com/Les-Doubles-A/podvault/releases/latest) :
-- **`PodVault-Setup-0.3.0-alpha.exe`** : installeur Windows classique (Inno Setup, sans privilèges administrateur requis)
-- **`podvault-0.3.0-alpha-windows-x64.exe`** : exécutable portable autonome (aucune dépendance externe)
+- **`PodVault-Setup-0.3.1-alpha.exe`** : installeur Windows classique (Inno Setup, sans privilèges administrateur requis)
+- **`podvault-0.3.1-alpha-windows-x64.exe`** : exécutable portable autonome (aucune dépendance externe)
 
 #### Compiler la version Windows depuis les sources
 

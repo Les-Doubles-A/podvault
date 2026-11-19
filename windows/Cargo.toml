@@ -1,6 +1,6 @@
 [package]
 name = "podvault"
-version = "0.3.0-alpha"
+version = "0.3.1-alpha"
 edition = "2021"
 description = "PodVault — Gestionnaire de podcasts 100 % local pour Windows"
 authors = ["Les-Doubles-A"]
@@ -8,10 +8,10 @@ authors = ["Les-Doubles-A"]
 [dependencies]
 eframe = { version = "0.31", default-features = true }
 egui = "0.31"
-egui_extras = { version = "0.31", features = ["image"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "ico"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
-rodio = { version = "0.20", default-features = false, features = ["symphonia-all"] }
+rodio = { version = "0.20", default-features = false }
+symphonia = { version = "0.5", features = ["aac", "adpcm", "alac", "flac", "isomp4", "mp3", "ogg", "pcm", "vorbis", "wav"] }
 lofty = "0.22"
 walkdir = "2.5"
 serde = { version = "1.0", features = ["derive"] }

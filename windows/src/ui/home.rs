@@ -4,16 +4,18 @@ use crate::rules::{HomeRecommender, PlaybackRules};
 use crate::theme::Palette;
 use crate::ui::widgets::{
     accent_button, card_frame, cover_art, format_duration_ms, format_human_duration_ms,
-    now_playing_bars,
+    now_playing_bars, CoverCache,
 };
 use crate::ui::{AppAction, Screen};
 use chrono::Utc;
 use egui::{ProgressBar, RichText, ScrollArea, Ui};
 use std::collections::{HashMap, HashSet};
 
+#[allow(clippy::too_many_arguments)]
 pub fn render_home(
     ui: &mut Ui,
     p: Palette,
+    covers: &mut CoverCache,
     podcasts: &[Podcast],
     episodes: &[Episode],
     states: &HashMap<i64, PlaybackState>,
@@ -106,7 +108,7 @@ pub fn render_home(
 
                 card_frame(p).show(ui, |ui| {
                     ui.horizontal(|ui| {
-                        cover_art(ui, cover, ep.display_title(), 60.0, 8);
+                        cover_art(ui, covers, cover, ep.display_title(), 60.0, 8);
                         ui.add_space(8.0);
                         ui.vertical(|ui| {
                             ui.horizontal(|ui| {
@@ -212,6 +214,7 @@ pub fn render_home(
                 render_compact_episode_card(
                     ui,
                     p,
+                    covers,
                     ep,
                     podcast_map.get(&ep.podcast_id).copied(),
                     current_episode_id == Some(ep.id),
@@ -254,6 +257,7 @@ pub fn render_home(
                 render_compact_episode_card(
                     ui,
                     p,
+                    covers,
                     ep,
                     podcast_map.get(&ep.podcast_id).copied(),
                     current_episode_id == Some(ep.id),
@@ -267,9 +271,11 @@ pub fn render_home(
     });
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_compact_episode_card(
     ui: &mut Ui,
     p: Palette,
+    covers: &mut CoverCache,
     ep: &Episode,
     pod: Option<&Podcast>,
     is_curr: bool,
@@ -279,7 +285,7 @@ fn render_compact_episode_card(
     let cover = ep.display_cover().or_else(|| pod.and_then(|x| x.display_cover()));
     card_frame(p).show(ui, |ui| {
         ui.horizontal(|ui| {
-            cover_art(ui, cover, ep.display_title(), 50.0, 8);
+            cover_art(ui, covers, cover, ep.display_title(), 50.0, 8);
             ui.add_space(8.0);
             ui.vertical(|ui| {
                 ui.horizontal(|ui| {

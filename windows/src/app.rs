@@ -8,7 +8,7 @@ use crate::model::{
 use crate::rules::PlaybackRules;
 use crate::scanner;
 use crate::theme::{apply_theme, Palette};
-use crate::ui::widgets::{accent_button, format_duration_ms, CoverAccentCache};
+use crate::ui::widgets::{accent_button, format_duration_ms, CoverCache};
 use crate::ui::{extra, home, library, player, AppAction, Screen};
 use chrono::{Local, Utc};
 use egui::{Color32, CornerRadius, Margin, RichText, Stroke};
@@ -71,7 +71,7 @@ pub struct PodVaultApp {
     scan_progress: Arc<Mutex<ScanProgress>>,
     scan_was_running: bool,
 
-    accent_cache: CoverAccentCache,
+    covers: CoverCache,
     toast: Option<Toast>,
     add_bookmark_modal: Option<AddBookmarkModal>,
     edit_podcast_modal: Option<EditPodcastModal>,
@@ -84,8 +84,6 @@ pub struct PodVaultApp {
 
 impl PodVaultApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        egui_extras::install_image_loaders(&cc.egui_ctx);
-
         let data_dir = directories::ProjectDirs::from("com", "podvault", "PodVault")
             .map(|d| d.data_local_dir().to_path_buf())
             .unwrap_or_else(|| PathBuf::from("podvault_data"));
@@ -126,7 +124,7 @@ impl PodVaultApp {
             search_query: String::new(),
             scan_progress: Arc::new(Mutex::new(ScanProgress::default())),
             scan_was_running: false,
-            accent_cache: CoverAccentCache::default(),
+            covers: CoverCache::default(),
             toast: None,
             add_bookmark_modal: None,
             edit_podcast_modal: None,
@@ -857,6 +855,7 @@ impl eframe::App for PodVaultApp {
         }
 
         self.tick();
+        self.covers.begin_frame();
         let p = Palette::for_mode(self.prefs.theme);
         let mut actions: Vec<AppAction> = Vec::new();
 
@@ -987,6 +986,7 @@ impl eframe::App for PodVaultApp {
                         player::render_mini_player(
                             ui,
                             p,
+                            &mut self.covers,
                             &ep,
                             pod.as_ref(),
                             position_ms,
@@ -1032,6 +1032,7 @@ impl eframe::App for PodVaultApp {
                     Screen::Home => home::render_home(
                         ui,
                         p,
+                        &mut self.covers,
                         &self.podcasts,
                         &self.episodes,
                         &self.states,
@@ -1043,6 +1044,7 @@ impl eframe::App for PodVaultApp {
                     Screen::Library => library::render_library(
                         ui,
                         p,
+                        &mut self.covers,
                         &self.podcasts,
                         &self.episodes,
                         &scan_snapshot,
@@ -1055,6 +1057,7 @@ impl eframe::App for PodVaultApp {
                             library::render_podcast_detail(
                                 ui,
                                 p,
+                                &mut self.covers,
                                 pod,
                                 &self.episodes,
                                 &self.states,
@@ -1093,7 +1096,7 @@ impl eframe::App for PodVaultApp {
                             self.sleep_timer,
                             self.queue.len(),
                             &self.prefs,
-                            &mut self.accent_cache,
+                            &mut self.covers,
                             &mut actions,
                         );
                     }

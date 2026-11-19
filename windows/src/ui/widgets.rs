@@ -1,5 +1,8 @@
 use crate::theme::Palette;
-use egui::{Color32, CornerRadius, Margin, Rect, Response, RichText, Sense, Stroke, Ui, Vec2};
+use egui::{
+    Color32, ColorImage, CornerRadius, Margin, Rect, Response, RichText, Sense, Stroke,
+    TextureHandle, TextureOptions, Ui, Vec2,
+};
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -98,41 +101,94 @@ pub fn now_playing_bars(ui: &mut Ui, p: Palette, is_playing: bool) {
     }
 }
 
-/// Cache des couleurs dominantes des pochettes (pour le mode ambiance).
-pub struct CoverAccentCache {
-    colors: HashMap<String, Color32>,
+struct CachedCover {
+    texture: Option<TextureHandle>,
+    dominant: Option<Color32>,
 }
 
-impl Default for CoverAccentCache {
-    fn default() -> Self {
-        Self {
-            colors: HashMap::new(),
-        }
+/// Cache natif des textures de pochettes et de leur couleur dominante.
+/// Charge directement depuis le disque via `image::open` (fiable avec les chemins Windows et accents).
+#[derive(Default)]
+pub struct CoverCache {
+    entries: HashMap<String, CachedCover>,
+    loads_this_frame: usize,
+}
+
+impl CoverCache {
+    const MAX_LOADS_PER_FRAME: usize = 6;
+
+    pub fn begin_frame(&mut self) {
+        self.loads_this_frame = 0;
     }
-}
 
-impl CoverAccentCache {
-    pub fn color_for(&mut self, cover_path: Option<&str>, fallback: Color32) -> Color32 {
+    fn ensure_loaded(&mut self, ctx: &egui::Context, path: &str) -> Option<&CachedCover> {
+        if self.entries.contains_key(path) {
+            return self.entries.get(path);
+        }
+        if self.loads_this_frame >= Self::MAX_LOADS_PER_FRAME {
+            ctx.request_repaint();
+            return None;
+        }
+        self.loads_this_frame += 1;
+
+        let p = Path::new(path);
+        let entry = if p.is_file() {
+            match image::open(p) {
+                Ok(img) => {
+                    let thumb = img.thumbnail(256, 256).to_rgba8();
+                    let dominant = compute_dominant_rgba(&thumb);
+                    let size = [thumb.width() as usize, thumb.height() as usize];
+                    let color_img = ColorImage::from_rgba_unmultiplied(size, thumb.as_raw());
+                    let tex = ctx.load_texture(
+                        format!("cover:{path}"),
+                        color_img,
+                        TextureOptions::LINEAR,
+                    );
+                    CachedCover {
+                        texture: Some(tex),
+                        dominant,
+                    }
+                }
+                Err(_) => CachedCover {
+                    texture: None,
+                    dominant: None,
+                },
+            }
+        } else {
+            CachedCover {
+                texture: None,
+                dominant: None,
+            }
+        };
+
+        self.entries.insert(path.to_string(), entry);
+        self.entries.get(path)
+    }
+
+    pub fn texture_for(&mut self, ctx: &egui::Context, cover_path: Option<&str>) -> Option<TextureHandle> {
+        let path = cover_path?;
+        self.ensure_loaded(ctx, path)?.texture.clone()
+    }
+
+    pub fn color_for(&mut self, ctx: &egui::Context, cover_path: Option<&str>, fallback: Color32) -> Color32 {
         let Some(path) = cover_path else {
             return fallback;
         };
-        if let Some(&c) = self.colors.get(path) {
-            return c;
-        }
-        let computed = extract_dominant_color(Path::new(path)).unwrap_or(fallback);
-        self.colors.insert(path.to_string(), computed);
-        computed
+        self.ensure_loaded(ctx, path)
+            .and_then(|c| c.dominant)
+            .unwrap_or(fallback)
     }
 }
 
-fn extract_dominant_color(path: &Path) -> Option<Color32> {
-    let img = image::open(path).ok()?.thumbnail(32, 32).to_rgb8();
+fn compute_dominant_rgba(img: &image::RgbaImage) -> Option<Color32> {
     let (mut r_sum, mut g_sum, mut b_sum, mut count) = (0u64, 0u64, 0u64, 0u64);
-    for px in img.pixels() {
-        let [r, g, b] = px.0;
+    for px in img.pixels().step_by(4) {
+        let [r, g, b, a] = px.0;
+        if a < 128 {
+            continue;
+        }
         let max = r.max(g).max(b) as i32;
         let min = r.min(g).min(b) as i32;
-        // Favorise les pixels un peu saturés
         let weight = if max - min > 25 { 3 } else { 1 };
         r_sum += (r as u64) * weight;
         g_sum += (g as u64) * weight;
@@ -180,24 +236,22 @@ fn initials(title: &str) -> String {
     format!("{a}{b}").to_uppercase()
 }
 
-/// Affiche une pochette carrée arrondie (image locale si disponible, sinon tuile typographique).
+/// Affiche une pochette carrée arrondie (texture chargée depuis le cache local, ou tuile typographique).
 pub fn cover_art(
     ui: &mut Ui,
+    covers: &mut CoverCache,
     cover_path: Option<&str>,
     title: &str,
     size: f32,
     rounding: u8,
 ) -> Response {
     let desired = Vec2::splat(size);
-    if let Some(path) = cover_path {
-        if Path::new(path).is_file() {
-            let uri = format!("file://{}", path.replace('\\', "/"));
-            return ui.add(
-                egui::Image::new(uri)
-                    .fit_to_exact_size(desired)
-                    .corner_radius(CornerRadius::same(rounding)),
-            );
-        }
+    if let Some(tex) = covers.texture_for(ui.ctx(), cover_path) {
+        return ui.add(
+            egui::Image::from_texture((tex.id(), desired))
+                .corner_radius(CornerRadius::same(rounding))
+                .sense(Sense::click()),
+        );
     }
 
     let (rect, resp) = ui.allocate_exact_size(desired, Sense::click());

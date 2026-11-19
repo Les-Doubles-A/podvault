@@ -4,15 +4,17 @@ use crate::rules::HomeRecommender;
 use crate::theme::Palette;
 use crate::ui::widgets::{
     accent_button, card_frame, cover_art, format_duration_ms, format_file_size,
-    format_human_duration_ms, now_playing_bars, pill_badge,
+    format_human_duration_ms, now_playing_bars, pill_badge, CoverCache,
 };
 use crate::ui::{AppAction, Screen};
 use egui::{Color32, ProgressBar, RichText, ScrollArea, Ui};
 use std::collections::HashMap;
 
+#[allow(clippy::too_many_arguments)]
 pub fn render_library(
     ui: &mut Ui,
     p: Palette,
+    covers: &mut CoverCache,
     podcasts: &[Podcast],
     episodes: &[Episode],
     scan: &ScanProgress,
@@ -109,6 +111,7 @@ pub fn render_library(
                                 ui.set_width(card_w - 28.0);
                                 let cover_resp = cover_art(
                                     ui,
+                                    covers,
                                     pod.display_cover(),
                                     pod.display_title(),
                                     card_w - 28.0,
@@ -162,6 +165,7 @@ pub fn render_library(
 pub fn render_podcast_detail(
     ui: &mut Ui,
     p: Palette,
+    covers: &mut CoverCache,
     podcast: &Podcast,
     episodes: &[Episode],
     states: &HashMap<i64, PlaybackState>,
@@ -193,7 +197,7 @@ pub fn render_podcast_detail(
 
     card_frame(p).show(ui, |ui| {
         ui.horizontal(|ui| {
-            cover_art(ui, podcast.display_cover(), podcast.display_title(), 110.0, 12);
+            cover_art(ui, covers, podcast.display_cover(), podcast.display_title(), 110.0, 12);
             ui.add_space(14.0);
             ui.vertical(|ui| {
                 ui.heading(RichText::new(podcast.display_title()).size(22.0).strong());

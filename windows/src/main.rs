@@ -23,7 +23,26 @@ fn load_window_icon() -> Option<egui::IconData> {
     })
 }
 
+fn install_panic_hook() {
+    std::panic::set_hook(Box::new(|info| {
+        let log_dir = directories::ProjectDirs::from("com", "podvault", "PodVault")
+            .map(|d| d.data_local_dir().to_path_buf())
+            .unwrap_or_else(|| std::path::PathBuf::from("."));
+        let _ = std::fs::create_dir_all(&log_dir);
+        let log_path = log_dir.join("crash.log");
+        let ts = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
+        let msg = format!("[{ts}] PANIC: {info}\n");
+        let _ = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(log_path)
+            .and_then(|mut f| std::io::Write::write_all(&mut f, msg.as_bytes()));
+    }));
+}
+
 fn main() -> eframe::Result<()> {
+    install_panic_hook();
+
     let mut viewport = egui::ViewportBuilder::default()
         .with_title("PodVault")
         .with_inner_size([1160.0, 740.0])
