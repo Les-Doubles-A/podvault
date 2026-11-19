@@ -1,6 +1,7 @@
 package com.podvault.app.ui.dictionary
 
 import android.text.Html
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -21,8 +22,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -38,6 +41,12 @@ data class DictionaryEntry(
     val sections: List<DictionarySection>
 )
 
+data class DictionaryLookupResult(
+    val entry: DictionaryEntry?,
+    val correctedFrom: String? = null,
+    val relatedSuggestions: List<String> = emptyList()
+)
+
 private object DictionaryClient {
     private val SKIP_HEADINGS = setOf(
         "étymologie", "prononciation", "voir aussi", "références",
@@ -46,50 +55,127 @@ private object DictionaryClient {
         "hyperonymes", "hyponymes", "homophones", "paronymes", "notes"
     )
 
-    suspend fun lookup(rawWord: String): Result<DictionaryEntry> = withContext(Dispatchers.IO) {
+    private const val USER_AGENT = "PodVault/0.4.1 (https://github.com/Les-Doubles-A/podvault)"
+
+    suspend fun suggest(rawQuery: String): List<String> = withContext(Dispatchers.IO) {
+        val cleaned = rawQuery.trim()
+        if (cleaned.length < 2) return@withContext emptyList()
+        fetchSuggestions(cleaned)
+    }
+
+    suspend fun lookup(rawWord: String): Result<DictionaryLookupResult> = withContext(Dispatchers.IO) {
         val cleaned = rawWord.trim()
         if (cleaned.isEmpty()) return@withContext Result.failure(IllegalArgumentException("Mot vide"))
 
-        val first = fetchPage(cleaned)
-        if (first != null) return@withContext Result.success(first)
+        try {
+            val exact = fetchPage(cleaned)
+                ?: cleaned.lowercase().takeIf { it != cleaned }?.let { fetchPage(it) }
+            if (exact != null) {
+                return@withContext Result.success(DictionaryLookupResult(entry = exact))
+            }
 
-        val lower = cleaned.lowercase()
-        if (lower != cleaned) {
-            val second = fetchPage(lower)
-            if (second != null) return@withContext Result.success(second)
+            // Aucun match exact : on cherche les résultats les plus probables (faute de frappe, accent manquant...)
+            val candidates = fetchSuggestions(cleaned)
+            for (candidate in candidates.take(3)) {
+                val found = fetchPage(candidate)
+                if (found != null) {
+                    val others = candidates.filterNot { it.equals(found.word, ignoreCase = true) }.take(5)
+                    return@withContext Result.success(
+                        DictionaryLookupResult(
+                            entry = found,
+                            correctedFrom = cleaned,
+                            relatedSuggestions = others
+                        )
+                    )
+                }
+            }
+
+            Result.success(DictionaryLookupResult(entry = null, relatedSuggestions = candidates.take(6)))
+        } catch (e: Exception) {
+            Result.failure(e)
         }
-
-        Result.failure(NoSuchElementException("Aucune définition trouvée pour « $cleaned »."))
     }
 
-    private fun fetchPage(word: String): DictionaryEntry? {
-        val encoded = URLEncoder.encode(word, "UTF-8").replace("+", "%20")
-        val url = URL(
-            "https://fr.wiktionary.org/w/api.php?action=parse&prop=text&format=json&redirects=1&disableeditsection=1&page=$encoded"
-        )
-        val conn = (url.openConnection() as HttpURLConnection).apply {
+    private fun httpGet(urlStr: String): String? {
+        val conn = (URL(urlStr).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             connectTimeout = 8_000
             readTimeout = 8_000
-            setRequestProperty("User-Agent", "PodVault/0.4.0 (https://github.com/Les-Doubles-A/podvault)")
+            setRequestProperty("User-Agent", USER_AGENT)
         }
         return try {
             if (conn.responseCode != 200) return null
-            val body = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-            val root = JSONObject(body)
-            if (root.has("error")) return null
-            val parse = root.optJSONObject("parse") ?: return null
-            val title = parse.optString("title", word)
-            val html = parse.optJSONObject("text")?.optString("*") ?: return null
-            val sections = parseWiktionaryHtml(html)
-            if (sections.isEmpty()) null else DictionaryEntry(title, sections)
+            conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
         } finally {
             conn.disconnect()
         }
     }
 
+    private fun encode(s: String): String = URLEncoder.encode(s, "UTF-8").replace("+", "%20")
+
+    private fun fetchSuggestions(query: String): List<String> {
+        val results = LinkedHashSet<String>()
+        val enc = encode(query)
+
+        // 1. Autocomplétion rapide par préfixe (opensearch)
+        runCatching {
+            val body = httpGet("https://fr.wiktionary.org/w/api.php?action=opensearch&search=$enc&limit=6&namespace=0&format=json")
+            if (body != null) {
+                val arr = JSONArray(body)
+                val titles = arr.optJSONArray(1)
+                if (titles != null) {
+                    for (i in 0 until titles.length()) {
+                        val t = titles.optString(i).trim()
+                        if (t.isNotEmpty()) results += t
+                    }
+                }
+            }
+        }
+
+        // 2. Si peu de résultats (ex: faute d'orthographe ou accent oublié), recherche floue MediaWiki
+        if (results.size < 4) {
+            runCatching {
+                val body = httpGet("https://fr.wiktionary.org/w/api.php?action=query&list=search&srsearch=$enc&srlimit=6&srnamespace=0&srinfo=suggestion&format=json")
+                if (body != null) {
+                    val qObj = JSONObject(body).optJSONObject("query")
+                    val didYouMean = qObj?.optJSONObject("searchinfo")?.optString("suggestion").orEmpty().trim()
+                    if (didYouMean.isNotEmpty()) {
+                        // Place la correction orthographique en premier
+                        val ordered = LinkedHashSet<String>()
+                        ordered += didYouMean
+                        ordered.addAll(results)
+                        results.clear()
+                        results.addAll(ordered)
+                    }
+                    val searchArr = qObj?.optJSONArray("search")
+                    if (searchArr != null) {
+                        for (i in 0 until searchArr.length()) {
+                            val t = searchArr.optJSONObject(i)?.optString("title").orEmpty().trim()
+                            if (t.isNotEmpty()) results += t
+                        }
+                    }
+                }
+            }
+        }
+
+        return results.take(6)
+    }
+
+    private fun fetchPage(word: String): DictionaryEntry? {
+        val enc = encode(word)
+        val body = httpGet(
+            "https://fr.wiktionary.org/w/api.php?action=parse&prop=text&format=json&redirects=1&disableeditsection=1&page=$enc"
+        ) ?: return null
+        val root = JSONObject(body)
+        if (root.has("error")) return null
+        val parse = root.optJSONObject("parse") ?: return null
+        val title = parse.optString("title", word)
+        val html = parse.optJSONObject("text")?.optString("*") ?: return null
+        val sections = parseWiktionaryHtml(html)
+        return if (sections.isEmpty()) null else DictionaryEntry(title, sections)
+    }
+
     private fun parseWiktionaryHtml(html: String): List<DictionarySection> {
-        // Isole la section Français si présente, sinon la première langue
         val h2Regex = Regex("<h2[^>]*>.*?</h2>", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE))
         val h2Matches = h2Regex.findAll(html).toList()
         val langChunk = if (h2Matches.isEmpty()) {
@@ -169,32 +255,45 @@ private object DictionaryClient {
 fun DictionaryScreen(onBack: () -> Unit) {
     var query by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
-    var entry by remember { mutableStateOf<DictionaryEntry?>(null) }
+    var result by remember { mutableStateOf<DictionaryLookupResult?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var liveSuggestions by remember { mutableStateOf<List<String>>(emptyList()) }
+    var showSuggestions by remember { mutableStateOf(false) }
     var recentWords by remember { mutableStateOf<List<String>>(emptyList()) }
     val scope = rememberCoroutineScope()
     val keyboard = LocalSoftwareKeyboardController.current
+
+    // Suggestions en direct pendant la frappe (façon moteur de recherche)
+    LaunchedEffect(query, showSuggestions) {
+        val trimmed = query.trim()
+        if (!showSuggestions || trimmed.length < 2) {
+            liveSuggestions = emptyList()
+            return@LaunchedEffect
+        }
+        delay(220)
+        liveSuggestions = DictionaryClient.suggest(trimmed)
+    }
 
     fun search(word: String) {
         val trimmed = word.trim()
         if (trimmed.isEmpty()) return
         query = trimmed
+        showSuggestions = false
+        liveSuggestions = emptyList()
         keyboard?.hide()
         isLoading = true
         errorMessage = null
         scope.launch {
             DictionaryClient.lookup(trimmed)
                 .onSuccess { res ->
-                    entry = res
-                    recentWords = (listOf(res.word) + recentWords.filterNot { it.equals(res.word, ignoreCase = true) }).take(6)
-                }
-                .onFailure { err ->
-                    entry = null
-                    errorMessage = if (err is NoSuchElementException) {
-                        err.message
-                    } else {
-                        "Connexion impossible. Vérifiez votre accès internet."
+                    result = res
+                    res.entry?.let { entry ->
+                        recentWords = (listOf(entry.word) + recentWords.filterNot { it.equals(entry.word, ignoreCase = true) }).take(6)
                     }
+                }
+                .onFailure {
+                    result = null
+                    errorMessage = "Connexion impossible. Vérifiez votre accès internet."
                 }
             isLoading = false
         }
@@ -220,7 +319,14 @@ fun DictionaryScreen(onBack: () -> Unit) {
         ) {
             OutlinedTextField(
                 value = query,
-                onValueChange = { query = it },
+                onValueChange = {
+                    query = it
+                    showSuggestions = true
+                    if (it.isBlank()) {
+                        result = null
+                        errorMessage = null
+                    }
+                },
                 modifier = Modifier.fillMaxWidth(),
                 placeholder = { Text("Rechercher un mot…") },
                 singleLine = true,
@@ -228,7 +334,13 @@ fun DictionaryScreen(onBack: () -> Unit) {
                 leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
                 trailingIcon = {
                     if (query.isNotEmpty()) {
-                        IconButton(onClick = { query = ""; entry = null; errorMessage = null }) {
+                        IconButton(onClick = {
+                            query = ""
+                            result = null
+                            errorMessage = null
+                            liveSuggestions = emptyList()
+                            showSuggestions = false
+                        }) {
                             Icon(Icons.Filled.Close, contentDescription = "Effacer")
                         }
                     }
@@ -237,7 +349,44 @@ fun DictionaryScreen(onBack: () -> Unit) {
                 keyboardActions = KeyboardActions(onSearch = { search(query) })
             )
 
-            if (recentWords.isNotEmpty() && entry == null && !isLoading) {
+            // Liste déroulante des résultats les plus probables pendant la saisie
+            if (showSuggestions && liveSuggestions.isNotEmpty()) {
+                Spacer(Modifier.height(6.dp))
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    tonalElevation = 2.dp,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column {
+                        liveSuggestions.forEachIndexed { idx, suggestion ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { search(suggestion) }
+                                    .padding(horizontal = 14.dp, vertical = 11.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Icon(
+                                    Icons.Filled.Search,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = suggestion,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            if (idx < liveSuggestions.lastIndex) {
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                            }
+                        }
+                    }
+                }
+            } else if (recentWords.isNotEmpty() && result == null && !isLoading) {
                 Spacer(Modifier.height(10.dp))
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(recentWords) { word ->
@@ -246,7 +395,7 @@ fun DictionaryScreen(onBack: () -> Unit) {
                 }
             }
 
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(14.dp))
 
             when {
                 isLoading -> {
@@ -258,25 +407,43 @@ fun DictionaryScreen(onBack: () -> Unit) {
                     Text(
                         text = errorMessage!!,
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 8.dp)
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                entry != null -> {
-                    val res = entry!!
+                result?.entry != null -> {
+                    val res = result!!
+                    val entry = res.entry!!
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(bottom = 24.dp),
-                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
+                        if (res.correctedFrom != null) {
+                            item(key = "corrected") {
+                                Text(
+                                    text = "Résultat le plus proche pour « ${res.correctedFrom} »",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
                         item(key = "word") {
                             Text(
-                                text = res.word,
+                                text = entry.word,
                                 style = MaterialTheme.typography.headlineMedium,
                                 fontWeight = FontWeight.SemiBold
                             )
                         }
-                        items(res.sections) { section ->
+                        if (res.relatedSuggestions.isNotEmpty()) {
+                            item(key = "related") {
+                                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    items(res.relatedSuggestions) { alt ->
+                                        AssistChip(onClick = { search(alt) }, label = { Text(alt) })
+                                    }
+                                }
+                            }
+                        }
+                        items(entry.sections) { section ->
                             Surface(
                                 shape = RoundedCornerShape(14.dp),
                                 color = MaterialTheme.colorScheme.surfaceContainer,
@@ -321,12 +488,30 @@ fun DictionaryScreen(onBack: () -> Unit) {
                         }
                     }
                 }
-                else -> {
+                result != null -> {
+                    val alts = result!!.relatedSuggestions
                     Text(
-                        text = "Tapez un mot pour afficher sa définition.",
+                        text = "Aucune définition trouvée pour « ${query.trim()} ».",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    if (alts.isNotEmpty()) {
+                        Spacer(Modifier.height(10.dp))
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(alts) { alt ->
+                                AssistChip(onClick = { search(alt) }, label = { Text(alt) })
+                            }
+                        }
+                    }
+                }
+                else -> {
+                    if (!showSuggestions || liveSuggestions.isEmpty()) {
+                        Text(
+                            text = "Tapez un mot pour voir les suggestions et sa définition.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
         }

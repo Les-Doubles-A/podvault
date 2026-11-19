@@ -1,6 +1,6 @@
 [package]
 name = "podvault"
-version = "0.4.0-alpha"
+version = "0.4.1-alpha"
 edition = "2021"
 description = "PodVault — Gestionnaire de podcasts 100 % local pour Windows"
 authors = ["Les-Doubles-A"]

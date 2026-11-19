@@ -12,6 +12,13 @@ pub struct DictionaryEntry {
     pub sections: Vec<DictionarySection>,
 }
 
+#[derive(Debug, Clone)]
+pub struct DictionaryLookupResult {
+    pub entry: Option<DictionaryEntry>,
+    pub corrected_from: Option<String>,
+    pub related_suggestions: Vec<String>,
+}
+
 const SKIP_HEADINGS: &[&str] = &[
     "étymologie",
     "prononciation",
@@ -31,24 +38,136 @@ const SKIP_HEADINGS: &[&str] = &[
     "notes",
 ];
 
-pub fn lookup_word(raw_word: &str) -> Result<DictionaryEntry, String> {
+pub fn suggest_words(raw_query: &str) -> Vec<String> {
+    let cleaned = raw_query.trim();
+    if cleaned.chars().count() < 2 {
+        return Vec::new();
+    }
+    fetch_suggestions(cleaned)
+}
+
+pub fn lookup_word(raw_word: &str) -> Result<DictionaryLookupResult, String> {
     let cleaned = raw_word.trim();
     if cleaned.is_empty() {
         return Err("Veuillez saisir un mot.".into());
     }
 
-    match fetch_page(cleaned)? {
-        Some(entry) => Ok(entry),
-        None => {
-            let lower = cleaned.to_lowercase();
-            if lower != cleaned {
-                if let Some(entry) = fetch_page(&lower)? {
-                    return Ok(entry);
-                }
-            }
-            Err(format!("Aucune définition trouvée pour « {cleaned} »."))
+    if let Some(entry) = fetch_page(cleaned)? {
+        return Ok(DictionaryLookupResult {
+            entry: Some(entry),
+            corrected_from: None,
+            related_suggestions: Vec::new(),
+        });
+    }
+
+    let lower = cleaned.to_lowercase();
+    if lower != cleaned {
+        if let Some(entry) = fetch_page(&lower)? {
+            return Ok(DictionaryLookupResult {
+                entry: Some(entry),
+                corrected_from: None,
+                related_suggestions: Vec::new(),
+            });
         }
     }
+
+    // Aucun match exact : recherche des résultats les plus probables (faute de frappe, accent manquant...)
+    let candidates = fetch_suggestions(cleaned);
+    for candidate in candidates.iter().take(3) {
+        if let Ok(Some(found)) = fetch_page(candidate) {
+            let others: Vec<String> = candidates
+                .iter()
+                .filter(|c| !c.eq_ignore_ascii_case(&found.word))
+                .take(5)
+                .cloned()
+                .collect();
+            return Ok(DictionaryLookupResult {
+                entry: Some(found),
+                corrected_from: Some(cleaned.to_string()),
+                related_suggestions: others,
+            });
+        }
+    }
+
+    Ok(DictionaryLookupResult {
+        entry: None,
+        corrected_from: None,
+        related_suggestions: candidates.into_iter().take(6).collect(),
+    })
+}
+
+fn http_get_json(url: &str) -> Result<Value, String> {
+    let resp = ureq::get(url)
+        .set(
+            "User-Agent",
+            "PodVault/0.4.1 (https://github.com/Les-Doubles-A/podvault)",
+        )
+        .timeout(std::time::Duration::from_secs(8))
+        .call()
+        .map_err(|_| "Connexion impossible. Vérifiez votre accès internet.".to_string())?;
+
+    let body = resp
+        .into_string()
+        .map_err(|_| "Réponse illisible du dictionnaire.".to_string())?;
+    serde_json::from_str(&body).map_err(|_| "Réponse JSON invalide.".to_string())
+}
+
+fn fetch_suggestions(query: &str) -> Vec<String> {
+    let mut results: Vec<String> = Vec::new();
+    let enc = percent_encode(query);
+
+    let push_unique = |list: &mut Vec<String>, s: String| {
+        let trimmed = s.trim().to_string();
+        if !trimmed.is_empty() && !list.iter().any(|x| x.eq_ignore_ascii_case(&trimmed)) {
+            list.push(trimmed);
+        }
+    };
+
+    // 1. Autocomplétion rapide par préfixe (opensearch)
+    let opensearch_url = format!(
+        "https://fr.wiktionary.org/w/api.php?action=opensearch&search={enc}&limit=6&namespace=0&format=json"
+    );
+    if let Ok(val) = http_get_json(&opensearch_url) {
+        if let Some(arr) = val.get(1).and_then(|v| v.as_array()) {
+            for item in arr {
+                if let Some(s) = item.as_str() {
+                    push_unique(&mut results, s.to_string());
+                }
+            }
+        }
+    }
+
+    // 2. Si peu de résultats (faute d'orthographe / accent oublié), recherche floue MediaWiki
+    if results.len() < 4 {
+        let search_url = format!(
+            "https://fr.wiktionary.org/w/api.php?action=query&list=search&srsearch={enc}&srlimit=6&srnamespace=0&srinfo=suggestion&format=json"
+        );
+        if let Ok(val) = http_get_json(&search_url) {
+            if let Some(q) = val.get("query") {
+                if let Some(suggestion) = q
+                    .get("searchinfo")
+                    .and_then(|s| s.get("suggestion"))
+                    .and_then(|v| v.as_str())
+                {
+                    let trimmed = suggestion.trim().to_string();
+                    if !trimmed.is_empty() {
+                        results.retain(|x| !x.eq_ignore_ascii_case(&trimmed));
+                        results.insert(0, trimmed);
+                    }
+                }
+                if let Some(arr) = q.get("search").and_then(|v| v.as_array()) {
+                    for item in arr {
+                        if let Some(t) = item.get("title").and_then(|v| v.as_str()) {
+                            push_unique(&mut results, t.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    results.truncate(6);
+    results
 }
 
 fn percent_encode(input: &str) -> String {
@@ -70,21 +189,7 @@ fn fetch_page(word: &str) -> Result<Option<DictionaryEntry>, String> {
     let url = format!(
         "https://fr.wiktionary.org/w/api.php?action=parse&prop=text&format=json&redirects=1&disableeditsection=1&page={encoded}"
     );
-
-    let resp = ureq::get(&url)
-        .set(
-            "User-Agent",
-            "PodVault/0.4.0 (https://github.com/Les-Doubles-A/podvault)",
-        )
-        .timeout(std::time::Duration::from_secs(8))
-        .call()
-        .map_err(|_| "Connexion impossible. Vérifiez votre accès internet.".to_string())?;
-
-    let body = resp
-        .into_string()
-        .map_err(|_| "Réponse illisible du dictionnaire.".to_string())?;
-    let root: Value =
-        serde_json::from_str(&body).map_err(|_| "Réponse JSON invalide.".to_string())?;
+    let root = http_get_json(&url)?;
 
     if root.get("error").is_some() {
         return Ok(None);

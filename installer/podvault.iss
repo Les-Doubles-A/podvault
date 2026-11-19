@@ -1,7 +1,7 @@
 ; Script Inno Setup pour PodVault Windows (Rust)
 
 #define MyAppName "PodVault"
-#define MyAppVersion "0.4.0-alpha"
+#define MyAppVersion "0.4.1-alpha"
 #define MyAppPublisher "Les-Doubles-A"
 #define MyAppURL "https://github.com/Les-Doubles-A/podvault"
 #define MyAppExeName "podvault.exe"

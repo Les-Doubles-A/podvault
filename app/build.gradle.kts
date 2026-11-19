@@ -12,8 +12,8 @@ android {
         applicationId = "com.podvault.app"
         minSdk = 26
         targetSdk = 37
-        versionCode = 2
-        versionName = "0.4.0-alpha"
+        versionCode = 3
+        versionName = "0.4.1-alpha"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

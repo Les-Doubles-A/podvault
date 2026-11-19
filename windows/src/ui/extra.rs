@@ -1,4 +1,4 @@
-use crate::dictionary::DictionaryEntry;
+use crate::dictionary::DictionaryLookupResult;
 use crate::model::{
     Bookmark, Episode, ListeningDay, PlaybackState, Podcast, Preferences, ScanProgress, ThemeMode,
 };
@@ -595,7 +595,9 @@ pub fn render_dictionary(
     p: Palette,
     query: &mut String,
     loading: bool,
-    result: Option<&Result<DictionaryEntry, String>>,
+    result: Option<&Result<DictionaryLookupResult, String>>,
+    live_suggestions: &[String],
+    show_suggestions: &mut bool,
     recent_words: &[String],
     actions: &mut Vec<AppAction>,
 ) {
@@ -606,24 +608,54 @@ pub fn render_dictionary(
         let resp = ui.add(
             egui::TextEdit::singleline(query)
                 .hint_text("Rechercher un mot…")
-                .desired_width(360.0),
+                .desired_width(380.0),
         );
+        if resp.changed() {
+            *show_suggestions = true;
+        }
         let enter_pressed = resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
         let btn_clicked = accent_button(ui, p, "Définir").clicked();
         if (enter_pressed || btn_clicked) && !query.trim().is_empty() && !loading {
+            *show_suggestions = false;
             actions.push(AppAction::LookupWord(query.trim().to_string()));
         }
         if !query.is_empty() && ui.button("✕").on_hover_text("Effacer").clicked() {
             query.clear();
+            *show_suggestions = false;
         }
     });
 
-    if !recent_words.is_empty() && result.is_none() && !loading {
+    // Liste des résultats les plus probables en direct (façon moteur de recherche)
+    if *show_suggestions && !live_suggestions.is_empty() {
+        ui.add_space(6.0);
+        egui::Frame::new()
+            .fill(p.surface_container_high)
+            .stroke(egui::Stroke::new(1.0_f32, p.outline.linear_multiply(0.5)))
+            .corner_radius(CornerRadius::same(10))
+            .inner_margin(egui::Margin::symmetric(6, 6))
+            .show(ui, |ui| {
+                ui.set_width(380.0);
+                for word in live_suggestions {
+                    let btn = egui::Button::new(
+                        RichText::new(format!("🔍  {word}")).color(p.on_surface).size(13.5),
+                    )
+                    .fill(egui::Color32::TRANSPARENT)
+                    .stroke(egui::Stroke::NONE)
+                    .min_size(egui::vec2(368.0, 28.0));
+                    if ui.add(btn).clicked() {
+                        *query = word.clone();
+                        *show_suggestions = false;
+                        actions.push(AppAction::LookupWord(word.clone()));
+                    }
+                }
+            });
+    } else if !recent_words.is_empty() && result.is_none() && !loading {
         ui.add_space(8.0);
         ui.horizontal_wrapped(|ui| {
             for word in recent_words {
                 if ui.button(word).clicked() {
                     *query = word.clone();
+                    *show_suggestions = false;
                     actions.push(AppAction::LookupWord(word.clone()));
                 }
             }
@@ -641,51 +673,92 @@ pub fn render_dictionary(
     }
 
     match result {
-        Some(Ok(entry)) => {
-            ScrollArea::vertical().show(ui, |ui| {
-                ui.label(RichText::new(&entry.word).size(24.0).strong());
-                ui.add_space(8.0);
-
-                for section in &entry.sections {
-                    card_frame(p).show(ui, |ui| {
-                        ui.set_min_width(ui.available_width().min(680.0));
-                        pill_badge(
-                            ui,
-                            p.primary_container,
-                            p.on_primary_container,
-                            &section.part_of_speech,
+        Some(Ok(res)) => {
+            if let Some(entry) = &res.entry {
+                ScrollArea::vertical().show(ui, |ui| {
+                    if let Some(orig) = &res.corrected_from {
+                        ui.label(
+                            RichText::new(format!("Résultat le plus proche pour « {orig} »"))
+                                .color(p.accent)
+                                .size(12.5),
                         );
-                        ui.add_space(8.0);
-                        for (idx, def) in section.definitions.iter().enumerate() {
-                            ui.horizontal_wrapped(|ui| {
-                                ui.label(
-                                    RichText::new(format!("{}.", idx + 1))
-                                        .color(p.accent)
-                                        .strong(),
-                                );
-                                ui.label(RichText::new(def).size(14.0));
-                            });
-                            ui.add_space(4.0);
-                        }
-                    });
+                        ui.add_space(2.0);
+                    }
+                    ui.label(RichText::new(&entry.word).size(24.0).strong());
+                    if !res.related_suggestions.is_empty() {
+                        ui.add_space(6.0);
+                        ui.horizontal_wrapped(|ui| {
+                            for alt in &res.related_suggestions {
+                                if ui.button(alt).clicked() {
+                                    *query = alt.clone();
+                                    *show_suggestions = false;
+                                    actions.push(AppAction::LookupWord(alt.clone()));
+                                }
+                            }
+                        });
+                    }
                     ui.add_space(8.0);
-                }
 
+                    for section in &entry.sections {
+                        card_frame(p).show(ui, |ui| {
+                            ui.set_min_width(ui.available_width().min(680.0));
+                            pill_badge(
+                                ui,
+                                p.primary_container,
+                                p.on_primary_container,
+                                &section.part_of_speech,
+                            );
+                            ui.add_space(8.0);
+                            for (idx, def) in section.definitions.iter().enumerate() {
+                                ui.horizontal_wrapped(|ui| {
+                                    ui.label(
+                                        RichText::new(format!("{}.", idx + 1))
+                                            .color(p.accent)
+                                            .strong(),
+                                    );
+                                    ui.label(RichText::new(def).size(14.0));
+                                });
+                                ui.add_space(4.0);
+                            }
+                        });
+                        ui.add_space(8.0);
+                    }
+
+                    ui.label(
+                        RichText::new("Source : Wiktionnaire")
+                            .size(11.5)
+                            .color(p.on_surface_variant),
+                    );
+                });
+            } else {
                 ui.label(
-                    RichText::new("Source : Wiktionnaire")
-                        .size(11.5)
+                    RichText::new(format!("Aucune définition trouvée pour « {} ».", query.trim()))
                         .color(p.on_surface_variant),
                 );
-            });
+                if !res.related_suggestions.is_empty() {
+                    ui.add_space(8.0);
+                    ui.horizontal_wrapped(|ui| {
+                        for alt in &res.related_suggestions {
+                            if ui.button(alt).clicked() {
+                                *query = alt.clone();
+                                *show_suggestions = false;
+                                actions.push(AppAction::LookupWord(alt.clone()));
+                            }
+                        }
+                    });
+                }
+            }
         }
         Some(Err(msg)) => {
             ui.label(RichText::new(msg).color(p.on_surface_variant));
         }
         None => {
-            ui.label(
-                RichText::new("Tapez un mot puis appuyez sur Entrée pour afficher sa définition.")
-                    .color(p.on_surface_variant),
-            );
+            if !*show_suggestions || live_suggestions.is_empty() {
+                ui.label(
+                    RichText::new("Tapez un mot pour voir les suggestions et sa définition.")
+                        .color(p.on_surface_variant),
+                );
+            }
         }
     }
 }

@@ -1,7 +1,7 @@
 use crate::audio::AudioEngine;
 use crate::backup;
 use crate::db::Database;
-use crate::dictionary::{self, DictionaryEntry};
+use crate::dictionary::{self, DictionaryLookupResult};
 use crate::model::{
     Bookmark, Episode, EpisodeFilter, EpisodeSort, ListeningDay, PlaybackState, Podcast,
     Preferences, ScanProgress, SleepTimerMode,
@@ -70,10 +70,15 @@ pub struct PodVaultApp {
     search_query: String,
 
     dict_query: String,
+    dict_last_suggested_query: String,
+    dict_last_edit: Instant,
+    dict_show_suggestions: bool,
+    dict_suggestions: Vec<String>,
+    dict_suggest_rx: Option<std::sync::mpsc::Receiver<(String, Vec<String>)>>,
     dict_loading: bool,
-    dict_result: Option<Result<DictionaryEntry, String>>,
+    dict_result: Option<Result<DictionaryLookupResult, String>>,
     dict_recent: Vec<String>,
-    dict_rx: Option<std::sync::mpsc::Receiver<Result<DictionaryEntry, String>>>,
+    dict_rx: Option<std::sync::mpsc::Receiver<Result<DictionaryLookupResult, String>>>,
 
     scan_progress: Arc<Mutex<ScanProgress>>,
     scan_was_running: bool,
@@ -130,6 +135,11 @@ impl PodVaultApp {
             episode_sort: EpisodeSort::Series,
             search_query: String::new(),
             dict_query: String::new(),
+            dict_last_suggested_query: String::new(),
+            dict_last_edit: Instant::now(),
+            dict_show_suggestions: false,
+            dict_suggestions: Vec::new(),
+            dict_suggest_rx: None,
             dict_loading: false,
             dict_result: None,
             dict_recent: Vec::new(),
@@ -328,15 +338,48 @@ impl PodVaultApp {
         // Réception du résultat du dictionnaire
         if let Some(rx) = &self.dict_rx {
             if let Ok(res) = rx.try_recv() {
-                if let Ok(entry) = &res {
-                    let w = entry.word.clone();
-                    self.dict_recent.retain(|x| !x.eq_ignore_ascii_case(&w));
-                    self.dict_recent.insert(0, w);
-                    self.dict_recent.truncate(6);
+                if let Ok(lookup) = &res {
+                    if let Some(entry) = &lookup.entry {
+                        let w = entry.word.clone();
+                        self.dict_recent.retain(|x| !x.eq_ignore_ascii_case(&w));
+                        self.dict_recent.insert(0, w);
+                        self.dict_recent.truncate(6);
+                    }
                 }
                 self.dict_result = Some(res);
                 self.dict_loading = false;
                 self.dict_rx = None;
+            }
+        }
+
+        // Réception des suggestions en direct du dictionnaire
+        if let Some(rx) = &self.dict_suggest_rx {
+            if let Ok((q, list)) = rx.try_recv() {
+                if q == self.dict_query.trim() {
+                    self.dict_suggestions = list;
+                }
+                self.dict_suggest_rx = None;
+            }
+        }
+
+        // Déclenchement debouncé (220 ms) des suggestions pendant la saisie
+        let trimmed_q = self.dict_query.trim().to_string();
+        if self.dict_show_suggestions
+            && trimmed_q.chars().count() >= 2
+            && trimmed_q != self.dict_last_suggested_query
+            && self.dict_last_edit.elapsed() >= Duration::from_millis(220)
+        {
+            self.dict_last_suggested_query = trimmed_q.clone();
+            let (tx, rx) = std::sync::mpsc::channel();
+            self.dict_suggest_rx = Some(rx);
+            std::thread::spawn(move || {
+                let list = dictionary::suggest_words(&trimmed_q);
+                let _ = tx.send((trimmed_q, list));
+            });
+        } else if !self.dict_show_suggestions || trimmed_q.chars().count() < 2 {
+            self.dict_suggestions.clear();
+            if trimmed_q.chars().count() < 2 {
+                self.dict_last_suggested_query.clear();
             }
         }
 
@@ -672,6 +715,8 @@ impl PodVaultApp {
                 AppAction::LookupWord(word) => {
                     self.dict_loading = true;
                     self.dict_result = None;
+                    self.dict_show_suggestions = false;
+                    self.dict_suggestions.clear();
                     let (tx, rx) = std::sync::mpsc::channel();
                     self.dict_rx = Some(rx);
                     std::thread::spawn(move || {
@@ -920,8 +965,14 @@ impl eframe::App for PodVaultApp {
         let muted = self.audio.as_ref().map(|a| a.is_muted()).unwrap_or(false);
         let scan_snapshot = self.scan_progress.lock().map(|s| s.clone()).unwrap_or_default();
 
-        if is_playing || scan_snapshot.running || self.toast.is_some() || self.dict_loading {
-            ctx.request_repaint_after(Duration::from_millis(250));
+        if is_playing
+            || scan_snapshot.running
+            || self.toast.is_some()
+            || self.dict_loading
+            || self.dict_suggest_rx.is_some()
+            || (self.dict_show_suggestions && self.dict_query.trim() != self.dict_last_suggested_query)
+        {
+            ctx.request_repaint_after(Duration::from_millis(120));
         }
 
         // Barre latérale de navigation
@@ -1162,15 +1213,26 @@ impl eframe::App for PodVaultApp {
                         &self.bookmarks,
                         &mut actions,
                     ),
-                    Screen::Dictionary => extra::render_dictionary(
-                        ui,
-                        p,
-                        &mut self.dict_query,
-                        self.dict_loading,
-                        self.dict_result.as_ref(),
-                        &self.dict_recent,
-                        &mut actions,
-                    ),
+                    Screen::Dictionary => {
+                        let prev_q = self.dict_query.clone();
+                        extra::render_dictionary(
+                            ui,
+                            p,
+                            &mut self.dict_query,
+                            self.dict_loading,
+                            self.dict_result.as_ref(),
+                            &self.dict_suggestions,
+                            &mut self.dict_show_suggestions,
+                            &self.dict_recent,
+                            &mut actions,
+                        );
+                        if self.dict_query != prev_q {
+                            self.dict_last_edit = Instant::now();
+                            if self.dict_query.trim().is_empty() {
+                                self.dict_result = None;
+                            }
+                        }
+                    }
                     Screen::Statistics => extra::render_statistics(
                         ui,
                         p,
