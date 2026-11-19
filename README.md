@@ -2,9 +2,9 @@
 
 Dépôt GitHub : **https://github.com/Les-Doubles-A/podvault**
 
-PodVault est un gestionnaire de podcasts Android **100 % local**. Il lit les
+PodVault est un gestionnaire de podcasts **Android et Windows (Rust)** **100 % local**. Il lit les
 fichiers audio déjà présents sur l’appareil, sans compte, téléchargement réseau,
-publicité ni télémétrie. Le manifeste ne demande pas la permission `INTERNET` et
+publicité ni télémétrie. Le manifeste Android ne demande pas la permission `INTERNET` et
 `allowBackup` reste désactivé. Les fichiers audio ne sont jamais déplacés,
 modifiés ou supprimés par l’application.
 
@@ -79,10 +79,29 @@ Compose restent à réaliser.
 <!-- installeur-release -->
 ## Installation
 
-Téléchargez **`podvault-0.2.0-alpha.apk`** depuis la [dernière release](https://github.com/Les-Doubles-A/podvault/releases/latest), puis lancez-le.
+### Windows (Rust)
+
+Téléchargez depuis la [dernière release](https://github.com/Les-Doubles-A/podvault/releases/latest) :
+- **`PodVault-Setup-0.3.0-alpha.exe`** : installeur Windows classique (Inno Setup, sans privilèges administrateur requis)
+- **`podvault-0.3.0-alpha-windows-x64.exe`** : exécutable portable autonome (aucune dépendance externe)
+
+#### Compiler la version Windows depuis les sources
+
+Prérequis : Rust (toolchain stable MSVC) et optionnellement Inno Setup 6.
+
+```powershell
+cargo test --manifest-path windows/Cargo.toml
+cargo build --release --manifest-path windows/Cargo.toml
+# Optionnel : générer l'installeur Windows
+& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\podvault.iss
+```
+
+### Android
+
+Téléchargez **`podvault-0.2.0-alpha.apk`** depuis la [release Android](https://github.com/Les-Doubles-A/podvault/releases/tag/v0.2.0-alpha), puis lancez-le.
 
 Copiez l'APK sur le téléphone Android et ouvrez-le (autorisez l'installation depuis des sources inconnues), ou installez-le en USB : `adb install podvault-0.2.0-alpha.apk`.
 
-### Recréer l'installeur
+#### Recréer l'APK Android
 
 `gradlew assembleDebug` produit l'APK (`app\build\outputs\apk\debug\app-debug.apk`).
