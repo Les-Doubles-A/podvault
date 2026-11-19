@@ -41,6 +41,7 @@ import androidx.navigation.navArgument
 import androidx.navigation.NavType
 import com.podvault.app.PodVaultApplication
 import com.podvault.app.ui.bookmarks.BookmarksScreen
+import com.podvault.app.ui.dictionary.DictionaryScreen
 import com.podvault.app.ui.components.MiniPlayer
 import com.podvault.app.ui.home.HomeScreen
 import com.podvault.app.ui.library.LibraryScreen
@@ -126,7 +127,8 @@ fun PodVaultApp() {
                 HomeScreen(
                     onEpisodeClick = { navController.navigate(DetailRoutes.player(it)) },
                     onGoToSettings = { navController.navigate(TopDestination.Settings.route) },
-                    onOpenQueue = { navController.navigate(DetailRoutes.QUEUE) { launchSingleTop = true } }
+                    onOpenQueue = { navController.navigate(DetailRoutes.QUEUE) { launchSingleTop = true } },
+                    onOpenDictionary = { navController.navigate(DetailRoutes.DICTIONARY) { launchSingleTop = true } }
                 )
             }
             composable(TopDestination.Library.route) {
@@ -154,6 +156,7 @@ fun PodVaultApp() {
                 SettingsScreen(onOpenStatistics = { navController.navigate(DetailRoutes.STATISTICS) })
             }
             composable(DetailRoutes.QUEUE) { QueueScreen(onBack = { navController.popBackStack() }) }
+            composable(DetailRoutes.DICTIONARY) { DictionaryScreen(onBack = { navController.popBackStack() }) }
             composable(DetailRoutes.STATISTICS) { StatisticsScreen(onBack = { navController.popBackStack() }) }
             composable(
                 DetailRoutes.PODCAST,
@@ -179,7 +182,8 @@ fun PodVaultApp() {
                     episodeId = episodeId,
                     initialPositionMs = positionMs,
                     onBack = { navController.popBackStack() },
-                    onOpenQueue = { navController.navigate(DetailRoutes.QUEUE) { launchSingleTop = true } }
+                    onOpenQueue = { navController.navigate(DetailRoutes.QUEUE) { launchSingleTop = true } },
+                    onOpenDictionary = { navController.navigate(DetailRoutes.DICTIONARY) { launchSingleTop = true } }
                 )
             }
         }

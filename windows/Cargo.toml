@@ -1,6 +1,6 @@
 [package]
 name = "podvault"
-version = "0.3.1-alpha"
+version = "0.4.0-alpha"
 edition = "2021"
 description = "PodVault — Gestionnaire de podcasts 100 % local pour Windows"
 authors = ["Les-Doubles-A"]
@@ -20,6 +20,7 @@ chrono = { version = "0.4", features = ["clock"] }
 rfd = "0.15"
 directories = "5.0"
 sha2 = "0.10"
+ureq = "2.12"
 
 [build-dependencies]
 winres = "0.1"

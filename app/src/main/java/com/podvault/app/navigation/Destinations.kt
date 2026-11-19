@@ -20,6 +20,7 @@ object DetailRoutes {
     const val DUPLICATES = "duplicates"
     const val STATISTICS = "statistics"
     const val QUEUE = "queue"
+    const val DICTIONARY = "dictionary"
 
     fun podcast(id: Long) = "podcast/$id"
     fun player(id: Long, positionMs: Long? = null) =

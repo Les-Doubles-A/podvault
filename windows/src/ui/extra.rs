@@ -1,3 +1,4 @@
+use crate::dictionary::DictionaryEntry;
 use crate::model::{
     Bookmark, Episode, ListeningDay, PlaybackState, Podcast, Preferences, ScanProgress, ThemeMode,
 };
@@ -586,4 +587,105 @@ pub fn render_settings(
         });
         ui.add_space(16.0);
     });
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn render_dictionary(
+    ui: &mut Ui,
+    p: Palette,
+    query: &mut String,
+    loading: bool,
+    result: Option<&Result<DictionaryEntry, String>>,
+    recent_words: &[String],
+    actions: &mut Vec<AppAction>,
+) {
+    ui.heading(RichText::new("Dictionnaire").size(26.0).strong());
+    ui.add_space(10.0);
+
+    ui.horizontal(|ui| {
+        let resp = ui.add(
+            egui::TextEdit::singleline(query)
+                .hint_text("Rechercher un mot…")
+                .desired_width(360.0),
+        );
+        let enter_pressed = resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+        let btn_clicked = accent_button(ui, p, "Définir").clicked();
+        if (enter_pressed || btn_clicked) && !query.trim().is_empty() && !loading {
+            actions.push(AppAction::LookupWord(query.trim().to_string()));
+        }
+        if !query.is_empty() && ui.button("✕").on_hover_text("Effacer").clicked() {
+            query.clear();
+        }
+    });
+
+    if !recent_words.is_empty() && result.is_none() && !loading {
+        ui.add_space(8.0);
+        ui.horizontal_wrapped(|ui| {
+            for word in recent_words {
+                if ui.button(word).clicked() {
+                    *query = word.clone();
+                    actions.push(AppAction::LookupWord(word.clone()));
+                }
+            }
+        });
+    }
+
+    ui.add_space(14.0);
+
+    if loading {
+        ui.horizontal(|ui| {
+            ui.spinner();
+            ui.label(RichText::new("Recherche en cours…").color(p.on_surface_variant));
+        });
+        return;
+    }
+
+    match result {
+        Some(Ok(entry)) => {
+            ScrollArea::vertical().show(ui, |ui| {
+                ui.label(RichText::new(&entry.word).size(24.0).strong());
+                ui.add_space(8.0);
+
+                for section in &entry.sections {
+                    card_frame(p).show(ui, |ui| {
+                        ui.set_min_width(ui.available_width().min(680.0));
+                        pill_badge(
+                            ui,
+                            p.primary_container,
+                            p.on_primary_container,
+                            &section.part_of_speech,
+                        );
+                        ui.add_space(8.0);
+                        for (idx, def) in section.definitions.iter().enumerate() {
+                            ui.horizontal_wrapped(|ui| {
+                                ui.label(
+                                    RichText::new(format!("{}.", idx + 1))
+                                        .color(p.accent)
+                                        .strong(),
+                                );
+                                ui.label(RichText::new(def).size(14.0));
+                            });
+                            ui.add_space(4.0);
+                        }
+                    });
+                    ui.add_space(8.0);
+                }
+
+                ui.label(
+                    RichText::new("Source : Wiktionnaire")
+                        .size(11.5)
+                        .color(p.on_surface_variant),
+                );
+            });
+        }
+        Some(Err(msg)) => {
+            ui.label(RichText::new(msg).color(p.on_surface_variant));
+        }
+        None => {
+            ui.label(
+                RichText::new("Tapez un mot puis appuyez sur Entrée pour afficher sa définition.")
+                    .color(p.on_surface_variant),
+            );
+        }
+    }
 }

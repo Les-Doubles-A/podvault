@@ -4,6 +4,7 @@ mod app;
 mod audio;
 mod backup;
 mod db;
+mod dictionary;
 mod model;
 mod rules;
 mod scanner;

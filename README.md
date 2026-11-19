@@ -82,8 +82,8 @@ Compose restent à réaliser.
 ### Windows (Rust)
 
 Téléchargez depuis la [dernière release](https://github.com/Les-Doubles-A/podvault/releases/latest) :
-- **`PodVault-Setup-0.3.1-alpha.exe`** : installeur Windows classique (Inno Setup, sans privilèges administrateur requis)
-- **`podvault-0.3.1-alpha-windows-x64.exe`** : exécutable portable autonome (aucune dépendance externe)
+- **`PodVault-Setup-0.4.0-alpha.exe`** : installeur Windows classique (Inno Setup, sans privilèges administrateur requis)
+- **`podvault-0.4.0-alpha-windows-x64.exe`** : exécutable portable autonome (aucune dépendance externe)
 
 #### Compiler la version Windows depuis les sources
 
@@ -98,9 +98,9 @@ cargo build --release --manifest-path windows/Cargo.toml
 
 ### Android
 
-Téléchargez **`podvault-0.2.0-alpha.apk`** depuis la [release Android](https://github.com/Les-Doubles-A/podvault/releases/tag/v0.2.0-alpha), puis lancez-le.
+Téléchargez **`podvault-0.4.0-alpha.apk`** depuis la [dernière release](https://github.com/Les-Doubles-A/podvault/releases/latest), puis lancez-le.
 
-Copiez l'APK sur le téléphone Android et ouvrez-le (autorisez l'installation depuis des sources inconnues), ou installez-le en USB : `adb install podvault-0.2.0-alpha.apk`.
+Copiez l'APK sur le téléphone Android et ouvrez-le (autorisez l'installation depuis des sources inconnues), ou installez-le en USB : `adb install podvault-0.4.0-alpha.apk`.
 
 #### Recréer l'APK Android
 

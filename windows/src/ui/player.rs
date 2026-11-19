@@ -68,6 +68,13 @@ pub fn render_player_screen(
                 {
                     actions.push(AppAction::Navigate(Screen::Queue));
                 }
+                if ui
+                    .button("📖 Dictionnaire")
+                    .on_hover_text("Rechercher la définition d'un mot")
+                    .clicked()
+                {
+                    actions.push(AppAction::Navigate(Screen::Dictionary));
+                }
                 let fav_label = if ep.is_favorite {
                     "♥ Favori"
                 } else {

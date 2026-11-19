@@ -21,6 +21,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material3.Badge
@@ -54,7 +55,12 @@ import com.podvault.app.ui.podVaultViewModel
 import java.time.LocalTime
 
 @Composable
-fun HomeScreen(onEpisodeClick: (Long) -> Unit, onGoToSettings: () -> Unit, onOpenQueue: () -> Unit) {
+fun HomeScreen(
+    onEpisodeClick: (Long) -> Unit,
+    onGoToSettings: () -> Unit,
+    onOpenQueue: () -> Unit,
+    onOpenDictionary: () -> Unit
+) {
     val viewModel = podVaultViewModel { HomeViewModel(it) }
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val queuedCount = LocalNowPlaying.current.queuedIds.size
@@ -68,7 +74,7 @@ fun HomeScreen(onEpisodeClick: (Long) -> Unit, onGoToSettings: () -> Unit, onOpe
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = 24.dp)
         ) {
-            item(key = "header") { HomeHeader(queuedCount, onOpenQueue) }
+            item(key = "header") { HomeHeader(queuedCount, onOpenQueue, onOpenDictionary) }
 
             state.continueListening.firstOrNull()?.let { hero ->
                 item(key = "continue_title") { SectionTitle(stringResource(R.string.home_continue)) }
@@ -151,7 +157,7 @@ private fun EpisodeRail(items: List<HomeEpisode>, viewModel: HomeViewModel, onEp
 }
 
 @Composable
-private fun HomeHeader(queuedCount: Int, onOpenQueue: () -> Unit) {
+private fun HomeHeader(queuedCount: Int, onOpenQueue: () -> Unit, onOpenDictionary: () -> Unit) {
     val hour = LocalTime.now().hour
     val greeting = when {
         hour < 5 -> R.string.greeting_evening
@@ -170,6 +176,9 @@ private fun HomeHeader(queuedCount: Int, onOpenQueue: () -> Unit) {
                 color = MaterialTheme.colorScheme.primary
             )
             Text(stringResource(greeting), style = MaterialTheme.typography.headlineMedium)
+        }
+        IconButton(onClick = onOpenDictionary) {
+            Icon(Icons.Filled.MenuBook, contentDescription = "Dictionnaire")
         }
         IconButton(onClick = onOpenQueue) {
             BadgedBox(badge = { if (queuedCount > 0) Badge { Text(queuedCount.toString()) } }) {

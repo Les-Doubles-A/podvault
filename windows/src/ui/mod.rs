@@ -14,6 +14,7 @@ pub enum Screen {
     Player,
     Bookmarks,
     Search,
+    Dictionary,
     Queue,
     Statistics,
     Duplicates,
@@ -61,4 +62,5 @@ pub enum AppAction {
     SetTheme(ThemeMode),
     SetEpisodeFilter(EpisodeFilter),
     SetEpisodeSort(EpisodeSort),
+    LookupWord(String),
 }

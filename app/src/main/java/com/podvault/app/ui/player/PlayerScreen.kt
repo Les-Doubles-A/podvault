@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.QueueMusic
@@ -95,7 +96,13 @@ private val SPEEDS = listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 2.5f, 3
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PlayerScreen(episodeId: Long, initialPositionMs: Long? = null, onBack: () -> Unit, onOpenQueue: () -> Unit) {
+fun PlayerScreen(
+    episodeId: Long,
+    initialPositionMs: Long? = null,
+    onBack: () -> Unit,
+    onOpenQueue: () -> Unit,
+    onOpenDictionary: () -> Unit
+) {
     val viewModel = podVaultViewModel { PlayerViewModel(it) }
     val episode by viewModel.episode.collectAsStateWithLifecycle()
     val playbackState by viewModel.playbackState.collectAsStateWithLifecycle()
@@ -163,6 +170,13 @@ fun PlayerScreen(episodeId: Long, initialPositionMs: Long? = null, onBack: () ->
                     }
                 },
                 actions = {
+                    IconButton(onClick = onOpenDictionary) {
+                        Icon(
+                            Icons.Filled.MenuBook,
+                            contentDescription = "Dictionnaire",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                     IconButton(onClick = { viewModel.toggleAmbientMode() }) {
                         Icon(
                             Icons.Filled.AutoAwesome,

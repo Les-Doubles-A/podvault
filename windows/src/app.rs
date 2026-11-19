@@ -1,6 +1,7 @@
 use crate::audio::AudioEngine;
 use crate::backup;
 use crate::db::Database;
+use crate::dictionary::{self, DictionaryEntry};
 use crate::model::{
     Bookmark, Episode, EpisodeFilter, EpisodeSort, ListeningDay, PlaybackState, Podcast,
     Preferences, ScanProgress, SleepTimerMode,
@@ -68,6 +69,12 @@ pub struct PodVaultApp {
     episode_sort: EpisodeSort,
     search_query: String,
 
+    dict_query: String,
+    dict_loading: bool,
+    dict_result: Option<Result<DictionaryEntry, String>>,
+    dict_recent: Vec<String>,
+    dict_rx: Option<std::sync::mpsc::Receiver<Result<DictionaryEntry, String>>>,
+
     scan_progress: Arc<Mutex<ScanProgress>>,
     scan_was_running: bool,
 
@@ -122,6 +129,11 @@ impl PodVaultApp {
             episode_filter: EpisodeFilter::All,
             episode_sort: EpisodeSort::Series,
             search_query: String::new(),
+            dict_query: String::new(),
+            dict_loading: false,
+            dict_result: None,
+            dict_recent: Vec::new(),
+            dict_rx: None,
             scan_progress: Arc::new(Mutex::new(ScanProgress::default())),
             scan_was_running: false,
             covers: CoverCache::default(),
@@ -310,6 +322,21 @@ impl PodVaultApp {
         if let Some(t) = &self.toast {
             if now >= t.expires_at {
                 self.toast = None;
+            }
+        }
+
+        // Réception du résultat du dictionnaire
+        if let Some(rx) = &self.dict_rx {
+            if let Ok(res) = rx.try_recv() {
+                if let Ok(entry) = &res {
+                    let w = entry.word.clone();
+                    self.dict_recent.retain(|x| !x.eq_ignore_ascii_case(&w));
+                    self.dict_recent.insert(0, w);
+                    self.dict_recent.truncate(6);
+                }
+                self.dict_result = Some(res);
+                self.dict_loading = false;
+                self.dict_rx = None;
             }
         }
 
@@ -642,6 +669,15 @@ impl PodVaultApp {
                 }
                 AppAction::SetEpisodeFilter(f) => self.episode_filter = f,
                 AppAction::SetEpisodeSort(s) => self.episode_sort = s,
+                AppAction::LookupWord(word) => {
+                    self.dict_loading = true;
+                    self.dict_result = None;
+                    let (tx, rx) = std::sync::mpsc::channel();
+                    self.dict_rx = Some(rx);
+                    std::thread::spawn(move || {
+                        let _ = tx.send(dictionary::lookup_word(&word));
+                    });
+                }
             }
         }
     }
@@ -884,7 +920,7 @@ impl eframe::App for PodVaultApp {
         let muted = self.audio.as_ref().map(|a| a.is_muted()).unwrap_or(false);
         let scan_snapshot = self.scan_progress.lock().map(|s| s.clone()).unwrap_or_default();
 
-        if is_playing || scan_snapshot.running || self.toast.is_some() {
+        if is_playing || scan_snapshot.running || self.toast.is_some() || self.dict_loading {
             ctx.request_repaint_after(Duration::from_millis(250));
         }
 
@@ -914,13 +950,14 @@ impl eframe::App for PodVaultApp {
                 );
                 ui.add_space(16.0);
 
-                let nav_items: [(&str, Screen); 8] = [
+                let nav_items: [(&str, Screen); 9] = [
                     ("🏠  Accueil", Screen::Home),
                     ("📚  Bibliothèque", Screen::Library),
                     ("▶  Lecteur", Screen::Player),
                     ("☰  File d'attente", Screen::Queue),
                     ("🔖  Points mémoire", Screen::Bookmarks),
                     ("🔍  Recherche", Screen::Search),
+                    ("📖  Dictionnaire", Screen::Dictionary),
                     ("📊  Statistiques", Screen::Statistics),
                     ("⚙  Paramètres", Screen::Settings),
                 ];
@@ -1123,6 +1160,15 @@ impl eframe::App for PodVaultApp {
                         &self.podcasts,
                         &self.episodes,
                         &self.bookmarks,
+                        &mut actions,
+                    ),
+                    Screen::Dictionary => extra::render_dictionary(
+                        ui,
+                        p,
+                        &mut self.dict_query,
+                        self.dict_loading,
+                        self.dict_result.as_ref(),
+                        &self.dict_recent,
                         &mut actions,
                     ),
                     Screen::Statistics => extra::render_statistics(
