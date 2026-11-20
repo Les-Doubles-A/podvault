@@ -301,7 +301,7 @@ class PlaybackController(private val context: Context) {
         if (player.currentMediaItem?.mediaId == id) {
             val ended = player.playbackState == Player.STATE_ENDED
             if (forcePosition || ended) player.seekTo(position)
-            if (ended) {
+            if (ended || player.playbackState == Player.STATE_IDLE) {
                 player.prepare()
                 player.play()
             }
@@ -356,7 +356,12 @@ class PlaybackController(private val context: Context) {
         controller?.let { player ->
             if (player.isPlaying) player.pause()
             else {
-                if (player.playbackState == Player.STATE_ENDED) player.seekTo(0L)
+                if (player.mediaItemCount == 0) return
+                when (player.playbackState) {
+                    Player.STATE_ENDED -> player.seekTo(0L)
+                    // Après une erreur de lecture le lecteur reste au repos : play() seul ne fait rien.
+                    Player.STATE_IDLE -> player.prepare()
+                }
                 player.play()
             }
         }

@@ -86,8 +86,5 @@ fun MiniPlayer(
 @Composable
 private fun MiniProgressBar(progress: StateFlow<PlaybackProgress>) {
     val value by progress.collectAsStateWithLifecycle()
-    LinearProgressIndicator(
-        progress = { value.fraction },
-        modifier = Modifier.fillMaxWidth().height(2.dp)
-    )
+    SlimProgress(fraction = { value.fraction }, height = 2.dp)
 }

@@ -10,8 +10,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.PlaylistAdd
-import androidx.compose.material.icons.filled.PlaylistAddCheck
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.automirrored.filled.PlaylistAddCheck
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -92,7 +92,7 @@ fun QueueMenuButton(episodeId: Long, onQueue: (QueueMode) -> Unit, modifier: Mod
     Box(modifier) {
         IconButton(onClick = { expanded = true }) {
             Icon(
-                if (queued) Icons.Filled.PlaylistAddCheck else Icons.Filled.PlaylistAdd,
+                if (queued) Icons.AutoMirrored.Filled.PlaylistAddCheck else Icons.AutoMirrored.Filled.PlaylistAdd,
                 contentDescription = if (queued) "Déjà dans la file d'attente" else "Ajouter à la file d'attente",
                 tint = if (queued) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -105,7 +105,7 @@ fun QueueMenuButton(episodeId: Long, onQueue: (QueueMode) -> Unit, modifier: Mod
             )
             DropdownMenuItem(
                 text = { Text("Ajouter à la fin de la file") },
-                leadingIcon = { Icon(Icons.Filled.PlaylistAdd, contentDescription = null) },
+                leadingIcon = { Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null) },
                 onClick = { expanded = false; onQueue(QueueMode.LAST) }
             )
         }

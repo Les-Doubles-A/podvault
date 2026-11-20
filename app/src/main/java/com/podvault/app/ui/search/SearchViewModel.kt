@@ -40,7 +40,8 @@ class SearchViewModel(app: PodVaultApplication) : ViewModel() {
 
     // Section 60: search covers podcasts, episodes, authors/descriptions, and bookmarks/notes.
     @OptIn(FlowPreview::class)
-    val results: StateFlow<SearchResults> = _query.debounce(250).distinctUntilChanged().flatMapLatest { q ->
+    val results: StateFlow<SearchResults> = _query.debounce(250).distinctUntilChanged().flatMapLatest { raw ->
+        val q = raw.trim()
         if (q.isBlank()) {
             flowOf(SearchResults())
         } else {

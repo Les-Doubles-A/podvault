@@ -12,13 +12,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.podvault.app.data.repository.QueueMode
@@ -65,6 +65,16 @@ fun EpisodeCard(
                     .clip(CircleShape)
                     .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f))
             ) { QueueMenuButton(episodeId, onQueue) }
+            if (progressFraction != null && progressFraction > 0f) {
+                // Sur la pochette : sous le texte, la barre était rognée par l'arrondi de la carte.
+                SlimProgress(
+                    fraction = { progressFraction },
+                    height = 4.dp,
+                    trackColor = Color.Black.copy(alpha = 0.35f),
+                    modifier = Modifier.align(Alignment.BottomStart).padding(horizontal = 10.dp, vertical = 8.dp)
+                        .fillMaxWidth(0.55f)
+                )
+            }
         }
         Spacer(Modifier.height(8.dp))
         Text(
@@ -89,12 +99,6 @@ fun EpisodeCard(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 2.dp)
         )
-        if (progressFraction != null && progressFraction > 0f) {
-            Spacer(Modifier.height(6.dp))
-            LinearProgressIndicator(
-                progress = { progressFraction.coerceIn(0f, 1f) },
-                modifier = Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp))
-            )
-        }
+        Spacer(Modifier.height(4.dp))
     }
 }

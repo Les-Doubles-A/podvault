@@ -8,6 +8,7 @@ mod dictionary;
 mod model;
 mod rules;
 mod scanner;
+mod stretch;
 mod theme;
 mod ui;
 

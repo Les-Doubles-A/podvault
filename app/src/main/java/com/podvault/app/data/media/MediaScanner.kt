@@ -2,6 +2,7 @@ package com.podvault.app.data.media
 
 import android.content.Context
 import android.net.Uri
+import android.provider.DocumentsContract
 import androidx.documentfile.provider.DocumentFile
 import com.podvault.app.data.database.dao.EpisodeDao
 import com.podvault.app.data.database.dao.PodcastDao
@@ -9,6 +10,8 @@ import com.podvault.app.data.database.entities.EpisodeEntity
 import com.podvault.app.data.database.entities.PodcastEntity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 
@@ -67,25 +70,25 @@ class MediaScanner(
                     errors += "Un dossier sélectionné est inaccessible. Vérifiez son autorisation d'accès."
                     continue
                 }
-                walk(rootDoc) { fileDoc ->
-                val name = fileDoc.name ?: return@walk
-                if (!MetadataReader.isSupportedAudioFile(name)) return@walk
+                walkTree(rootUri, rootDoc.name) { fileDoc ->
+                val name = fileDoc.name
+                if (!MetadataReader.isSupportedAudioFile(name)) return@walkTree
 
                 filesScanned++
-                val podcastLabel = fileDoc.parentFile?.name ?: "Podcasts"
+                val podcastLabel = fileDoc.parentName ?: "Podcasts"
                 onProgress(ScanProgress(filesScanned, filesScanned, podcastLabel, name))
 
                 try {
                     val uriString = fileDoc.uri.toString()
                     seenUris += uriString
                     val existing = episodeDao.getByUri(uriString)
-                    val fileSize = fileDoc.length()
-                    val lastModified = fileDoc.lastModified()
+                    val fileSize = fileDoc.size
+                    val lastModified = fileDoc.lastModified
 
                     if (existing != null) {
                         // Same file, unchanged -> nothing to do (light scan).
                         if (existing.fileSize == fileSize && existing.lastModifiedFile == lastModified && !existing.isMissing) {
-                            return@walk
+                            return@walkTree
                         }
                         // Same file but changed (or was missing and reappeared) -> refresh metadata.
                         val meta = metadataReader.read(fileDoc.uri)
@@ -102,7 +105,7 @@ class MediaScanner(
                             )
                         )
                         updatedEpisodes++
-                        return@walk
+                        return@walkTree
                     }
 
                     // Not found by exact URI. Maybe it's a file that moved/was renamed:
@@ -118,7 +121,7 @@ class MediaScanner(
                             )
                         )
                         updatedEpisodes++
-                        return@walk
+                        return@walkTree
                     }
 
                     // Genuinely new file. Read tags first so grouping can use the
@@ -148,7 +151,7 @@ class MediaScanner(
                     throw e
                 } catch (e: Exception) {
                     scanComplete = false
-                    errors += "${fileDoc.name ?: "Fichier"}: ${e.javaClass.simpleName}"
+                    errors += "${fileDoc.name}: ${e.javaClass.simpleName}"
                 }
             }
             } catch (e: CancellationException) {
@@ -202,12 +205,11 @@ class MediaScanner(
      */
     private suspend fun resolvePodcastFor(
         meta: ExtractedMetadata?,
-        fileDoc: DocumentFile,
+        fileDoc: ScannedFile,
         rootUri: Uri
     ): PodcastEntity {
-        val parent = fileDoc.parentFile
-        val folderKey = parent?.uri?.toString() ?: rootUri.toString()
-        val folderTitle = parent?.name?.trim()?.takeIf { it.isNotBlank() } ?: "Podcasts"
+        val folderKey = fileDoc.parentUri?.toString() ?: rootUri.toString()
+        val folderTitle = fileDoc.parentName?.trim()?.takeIf { it.isNotBlank() } ?: "Podcasts"
 
         // Prefer the album tag as the show title (a podcast's episodes are almost
         // always tagged with the show name as "album"), then album artist, then
@@ -243,15 +245,64 @@ class MediaScanner(
             ?: error("Podcast just inserted with id=$id could not be re-read")
     }
 
-    private suspend fun walk(dir: DocumentFile, onFile: suspend (DocumentFile) -> Unit) {
-        val children = dir.listFiles()
-        for (child in children) {
-            if (child.isDirectory) {
-                walk(child, onFile)
-            } else if (child.isFile) {
-                onFile(child)
+    /** Fichier audio candidat, lu en une seule requête par dossier. */
+    private data class ScannedFile(
+        val uri: Uri,
+        val name: String,
+        val size: Long,
+        val lastModified: Long,
+        val parentName: String?,
+        val parentUri: Uri?
+    )
+
+    /**
+     * Parcours récursif d'une arborescence SAF. DocumentFile lançait une requête ContentResolver
+     * par propriété et par fichier (nom, type, taille, date) : une seule requête par dossier suffit.
+     * Les URI produites sont identiques à celles de DocumentFile, les épisodes existants restent liés.
+     */
+    private suspend fun walkTree(treeUri: Uri, rootName: String?, onFile: suspend (ScannedFile) -> Unit) {
+        walkDir(treeUri, DocumentsContract.getTreeDocumentId(treeUri), rootName, onFile)
+    }
+
+    private suspend fun walkDir(treeUri: Uri, documentId: String, dirName: String?, onFile: suspend (ScannedFile) -> Unit) {
+        currentCoroutineContext().ensureActive()
+        val dirUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId)
+        val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, documentId)
+        val subDirs = mutableListOf<Pair<String, String?>>()
+        val files = mutableListOf<ScannedFile>()
+        val projection = arrayOf(
+            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+            DocumentsContract.Document.COLUMN_MIME_TYPE,
+            DocumentsContract.Document.COLUMN_SIZE,
+            DocumentsContract.Document.COLUMN_LAST_MODIFIED
+        )
+        val cursor = context.contentResolver.query(childrenUri, projection, null, null, null)
+            ?: throw java.io.IOException("Dossier illisible")
+        cursor.use { c ->
+            while (c.moveToNext()) {
+                val id = c.getString(0) ?: continue
+                val name = c.getString(1)
+                val mime = c.getString(2)
+                if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
+                    subDirs += id to name
+                } else if (!name.isNullOrBlank()) {
+                    files += ScannedFile(
+                        uri = DocumentsContract.buildDocumentUriUsingTree(treeUri, id),
+                        name = name,
+                        size = if (c.isNull(3)) 0L else c.getLong(3),
+                        lastModified = if (c.isNull(4)) 0L else c.getLong(4),
+                        parentName = dirName,
+                        parentUri = dirUri
+                    )
+                }
             }
         }
+        for (file in files) {
+            currentCoroutineContext().ensureActive()
+            onFile(file)
+        }
+        for ((id, name) in subDirs) walkDir(treeUri, id, name, onFile)
     }
 
     data class ParsedFileName(val title: String?, val season: Int?, val episode: Int?)

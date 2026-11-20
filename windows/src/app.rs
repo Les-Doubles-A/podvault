@@ -202,6 +202,22 @@ impl PodVaultApp {
     }
 
     fn play_episode(&mut self, episode_id: i64, explicit_position_ms: Option<i64>) {
+        // Un épisode lancé directement ne doit pas être rejoué ensuite par la file.
+        self.queue.retain(|&id| id != episode_id);
+
+        // Relancer l'épisode déjà chargé : simple reprise, sans recharger le fichier ni
+        // revenir à la dernière position enregistrée.
+        if explicit_position_ms.is_none() && self.current_episode_id == Some(episode_id) {
+            if let Some(engine) = &mut self.audio {
+                if engine.is_loaded() && !engine.is_finished() {
+                    if !engine.is_playing() {
+                        self.handle_resume();
+                    }
+                    return;
+                }
+            }
+        }
+
         // Persiste la position de l'épisode précédent avant de changer
         self.persist_current_playback(0);
 
@@ -234,7 +250,7 @@ impl PodVaultApp {
                 });
                 state.position_ms = start_ms;
                 state.last_played_at = now;
-                state.play_count += 1;
+                self.last_persist = Instant::now();
                 if state.completed && start_ms < ep.duration_ms.saturating_sub(5_000) {
                     state.completed = false;
                 }
@@ -245,6 +261,22 @@ impl PodVaultApp {
                 self.show_toast(err, true);
             }
         }
+    }
+
+    /// Reprise après une pause, avec le petit retour en arrière proportionnel à la pause.
+    fn handle_resume(&mut self) {
+        let smart_rewind = self.prefs.smart_rewind;
+        if let Some(engine) = &mut self.audio {
+            let paused_for = engine.resume().unwrap_or(0);
+            if smart_rewind {
+                let rewind = PlaybackRules::smart_rewind_ms(paused_for);
+                if rewind > 0 {
+                    let target = (engine.position_ms() - rewind).max(0);
+                    engine.seek_ms(target);
+                }
+            }
+        }
+        self.last_persist = Instant::now();
     }
 
     fn persist_current_playback(&mut self, delta_listened_ms: i64) {
@@ -275,7 +307,9 @@ impl PodVaultApp {
         state.position_ms = pos_ms;
         state.last_played_at = now;
         state.total_listened_ms += delta_listened_ms.max(0);
-        if completed {
+        if completed && !state.completed {
+            // Le nombre d'écoutes compte les épisodes terminés, pas chaque lancement.
+            state.play_count += 1;
             state.completed = true;
         }
         let _ = self.db.upsert_playback_state(&state);
@@ -447,6 +481,9 @@ impl PodVaultApp {
                         total_listened_ms: 0,
                     });
                     st.position_ms = dur;
+                    if !st.completed {
+                        st.play_count += 1;
+                    }
                     st.completed = true;
                     let _ = self.db.upsert_playback_state(&st);
                     self.states.insert(ep_id, st);
@@ -482,15 +519,10 @@ impl PodVaultApp {
                             engine.pause();
                             self.persist_current_playback(0);
                         } else if engine.is_loaded() {
-                            let paused_for = engine.resume().unwrap_or(0);
-                            if self.prefs.smart_rewind {
-                                let rewind = PlaybackRules::smart_rewind_ms(paused_for);
-                                if rewind > 0 {
-                                    let target = (engine.position_ms() - rewind).max(0);
-                                    engine.seek_ms(target);
-                                }
-                            }
-                            self.last_persist = Instant::now();
+                            self.handle_resume();
+                        } else if let Some(id) = self.current_episode_id {
+                            // Épisode terminé ou fichier déchargé : le bouton lecture le relance.
+                            self.play_episode(id, None);
                         }
                     }
                 }

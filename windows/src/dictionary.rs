@@ -100,7 +100,7 @@ fn http_get_json(url: &str) -> Result<Value, String> {
     let resp = ureq::get(url)
         .set(
             "User-Agent",
-            "PodVault/0.4.1 (https://github.com/Les-Doubles-A/podvault)",
+            "PodVault/0.4.2 (https://github.com/Les-Doubles-A/podvault)",
         )
         .timeout(std::time::Duration::from_secs(8))
         .call()

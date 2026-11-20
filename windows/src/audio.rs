@@ -1,3 +1,4 @@
+use crate::stretch::{SpeedControl, TimeStretch};
 use rodio::{OutputStream, OutputStreamHandle, Sink, Source};
 use std::fs::File;
 use std::path::Path;
@@ -201,6 +202,8 @@ pub struct AudioEngine {
     _stream: OutputStream,
     stream_handle: OutputStreamHandle,
     sink: Option<Sink>,
+    /// Vitesse appliquée par le filtre WSOLA (le Sink reste à 1.0 pour ne pas changer la hauteur).
+    speed_control: Option<SpeedControl>,
     current_path: Option<String>,
     duration_ms: i64,
     speed: f32,
@@ -220,6 +223,7 @@ impl AudioEngine {
             _stream: stream,
             stream_handle,
             sink: None,
+            speed_control: None,
             current_path: None,
             duration_ms: 0,
             speed: 1.0,
@@ -267,15 +271,16 @@ impl AudioEngine {
 
         self.speed = speed.clamp(0.5, 3.0);
         self.volume = volume.clamp(0.0, 1.0);
-        sink.set_speed(self.speed);
+        let speed_control = SpeedControl::new(self.speed);
         sink.set_volume(if self.muted { 0.0 } else { self.volume });
-        sink.append(source);
+        sink.append(TimeStretch::new(source, speed_control.clone()));
         sink.play();
 
         if let Some(old) = self.sink.take() {
             old.stop();
         }
         self.sink = Some(sink);
+        self.speed_control = Some(speed_control);
         self.current_path = Some(path.to_string());
         self.duration_ms = duration_ms;
         self.base_position_ms = clamped_start;
@@ -329,6 +334,7 @@ impl AudioEngine {
         if let Some(sink) = self.sink.take() {
             sink.stop();
         }
+        self.speed_control = None;
         self.current_path = None;
         self.base_position_ms = 0;
         self.anchor_instant = None;
@@ -360,8 +366,8 @@ impl AudioEngine {
             self.anchor_instant = Some(Instant::now());
         }
         self.speed = clamped;
-        if let Some(sink) = &self.sink {
-            sink.set_speed(clamped);
+        if let Some(control) = &self.speed_control {
+            control.set(clamped);
         }
     }
 

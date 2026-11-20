@@ -214,6 +214,7 @@ impl EpisodeSort {
 }
 
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct ScanProgress {
     pub running: bool,
     pub scanned_files: usize,
@@ -225,20 +226,6 @@ pub struct ScanProgress {
     pub error: Option<String>,
 }
 
-impl Default for ScanProgress {
-    fn default() -> Self {
-        Self {
-            running: false,
-            scanned_files: 0,
-            total_files: 0,
-            added_episodes: 0,
-            updated_episodes: 0,
-            current_file: String::new(),
-            completed: false,
-            error: None,
-        }
-    }
-}
 
 #[derive(Debug, Clone)]
 pub struct DuplicateGroup {

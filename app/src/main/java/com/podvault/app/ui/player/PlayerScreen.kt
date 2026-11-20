@@ -26,10 +26,10 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.QueueMusic
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.Forward30
@@ -172,7 +172,7 @@ fun PlayerScreen(
                 actions = {
                     IconButton(onClick = onOpenDictionary) {
                         Icon(
-                            Icons.Filled.MenuBook,
+                            Icons.AutoMirrored.Filled.MenuBook,
                             contentDescription = "Dictionnaire",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -186,7 +186,7 @@ fun PlayerScreen(
                     }
                     IconButton(onClick = onOpenQueue) {
                         BadgedBox(badge = { if (queue.upNext.isNotEmpty()) Badge { Text(queue.upNext.size.toString()) } }) {
-                            Icon(Icons.Filled.QueueMusic, contentDescription = stringResource(R.string.queue_title))
+                            Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = stringResource(R.string.queue_title))
                         }
                     }
                     IconButton(onClick = { selectedEpisodeCoverUri = null; editingEpisodeMetadata = true }, enabled = episode != null) {
@@ -236,6 +236,8 @@ fun PlayerScreen(
                     horizontalArrangement = Arrangement.SpaceEvenly,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    // Contrepoids du bouton "suivant" : le bouton lecture reste centré sous la pochette.
+                    Spacer(Modifier.size(48.dp))
                     SkipButton(Icons.Filled.Replay, rewindSeconds, "Reculer de $rewindSeconds secondes", mirrored = false) { viewModel.skipBackward() }
                     FilledIconButton(onClick = { viewModel.togglePlayPause() }, modifier = Modifier.size(76.dp)) {
                         Icon(

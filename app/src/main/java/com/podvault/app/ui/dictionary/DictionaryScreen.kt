@@ -21,7 +21,10 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.saveable.rememberSaveable
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -55,7 +58,7 @@ private object DictionaryClient {
         "hyperonymes", "hyponymes", "homophones", "paronymes", "notes"
     )
 
-    private const val USER_AGENT = "PodVault/0.4.1 (https://github.com/Les-Doubles-A/podvault)"
+    private const val USER_AGENT = "PodVault/0.4.2 (https://github.com/Les-Doubles-A/podvault)"
 
     suspend fun suggest(rawQuery: String): List<String> = withContext(Dispatchers.IO) {
         val cleaned = rawQuery.trim()
@@ -91,6 +94,8 @@ private object DictionaryClient {
             }
 
             Result.success(DictionaryLookupResult(entry = null, relatedSuggestions = candidates.take(6)))
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -246,21 +251,32 @@ private object DictionaryClient {
         return items
     }
 
+    private val NON_TEXT_BLOCKS = Regex(
+        "<(style|script|sup)[^>]*>.*?</\\1>",
+        setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
+    )
+
+    // Html.fromHtml conserve le texte des balises <style> (styles des modèles du Wiktionnaire)
+    // et des appels de note <sup> : ils apparaissaient au milieu des définitions.
     private fun stripHtml(input: String): String =
-        Html.fromHtml(input, Html.FROM_HTML_MODE_COMPACT).toString().trim()
+        Html.fromHtml(input.replace(NON_TEXT_BLOCKS, ""), Html.FROM_HTML_MODE_COMPACT)
+            .toString()
+            .replace(' ', ' ')
+            .trim()
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DictionaryScreen(onBack: () -> Unit) {
-    var query by remember { mutableStateOf("") }
+    var query by rememberSaveable { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
     var result by remember { mutableStateOf<DictionaryLookupResult?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var liveSuggestions by remember { mutableStateOf<List<String>>(emptyList()) }
     var showSuggestions by remember { mutableStateOf(false) }
-    var recentWords by remember { mutableStateOf<List<String>>(emptyList()) }
+    var recentWords by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
     val scope = rememberCoroutineScope()
+    var lookupJob by remember { mutableStateOf<Job?>(null) }
     val keyboard = LocalSoftwareKeyboardController.current
 
     // Suggestions en direct pendant la frappe (façon moteur de recherche)
@@ -271,7 +287,7 @@ fun DictionaryScreen(onBack: () -> Unit) {
             return@LaunchedEffect
         }
         delay(220)
-        liveSuggestions = DictionaryClient.suggest(trimmed)
+        liveSuggestions = runCatching { DictionaryClient.suggest(trimmed) }.getOrDefault(emptyList())
     }
 
     fun search(word: String) {
@@ -283,7 +299,10 @@ fun DictionaryScreen(onBack: () -> Unit) {
         keyboard?.hide()
         isLoading = true
         errorMessage = null
-        scope.launch {
+        // Une recherche plus récente remplace la précédente : sinon la réponse la plus lente
+        // pouvait écraser le résultat du dernier mot demandé.
+        lookupJob?.cancel()
+        lookupJob = scope.launch {
             DictionaryClient.lookup(trimmed)
                 .onSuccess { res ->
                     result = res

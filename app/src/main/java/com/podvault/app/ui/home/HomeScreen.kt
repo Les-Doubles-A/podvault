@@ -21,9 +21,9 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.QueueMusic
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
@@ -50,6 +50,7 @@ import com.podvault.app.ui.components.EpisodeCard
 import com.podvault.app.ui.components.EpisodeRow
 import com.podvault.app.ui.components.LocalNowPlaying
 import com.podvault.app.ui.components.NowPlayingIndicator
+import com.podvault.app.ui.components.SlimProgress
 import com.podvault.app.ui.components.formatRemaining
 import com.podvault.app.ui.podVaultViewModel
 import java.time.LocalTime
@@ -178,11 +179,11 @@ private fun HomeHeader(queuedCount: Int, onOpenQueue: () -> Unit, onOpenDictiona
             Text(stringResource(greeting), style = MaterialTheme.typography.headlineMedium)
         }
         IconButton(onClick = onOpenDictionary) {
-            Icon(Icons.Filled.MenuBook, contentDescription = "Dictionnaire")
+            Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = "Dictionnaire")
         }
         IconButton(onClick = onOpenQueue) {
             BadgedBox(badge = { if (queuedCount > 0) Badge { Text(queuedCount.toString()) } }) {
-                Icon(Icons.Filled.QueueMusic, contentDescription = stringResource(R.string.queue_title))
+                Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = stringResource(R.string.queue_title))
             }
         }
     }
@@ -218,10 +219,7 @@ private fun ContinueHero(item: HomeEpisode, onClick: () -> Unit, modifier: Modif
                 )
                 Spacer(Modifier.height(8.dp))
                 item.progress?.let {
-                    LinearProgressIndicator(
-                        progress = { it },
-                        modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp))
-                    )
+                    SlimProgress(fraction = { it }, height = 4.dp)
                     Spacer(Modifier.height(4.dp))
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {

@@ -105,10 +105,7 @@ fun EpisodeRow(
             }
             if (progressFraction != null && progressFraction > 0f) {
                 Spacer(Modifier.height(6.dp))
-                LinearProgressIndicator(
-                    progress = { progressFraction.coerceIn(0f, 1f) },
-                    modifier = Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp))
-                )
+                SlimProgress(fraction = { progressFraction })
             }
         }
         if (onQueue != null) {

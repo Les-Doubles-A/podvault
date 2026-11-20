@@ -55,11 +55,10 @@ fn cache_cover_bytes(covers_dir: &Path, bytes: &[u8]) -> Option<String> {
         "jpg"
     };
     let target = covers_dir.join(format!("{}.{ext}", &hash[..16]));
-    if !target.exists() {
-        if std::fs::write(&target, bytes).is_err() {
+    if !target.exists()
+        && std::fs::write(&target, bytes).is_err() {
             return None;
         }
-    }
     Some(target.to_string_lossy().to_string())
 }
 

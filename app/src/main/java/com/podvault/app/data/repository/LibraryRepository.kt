@@ -83,6 +83,13 @@ class LibraryRepository(
     suspend fun rescanLibrary() {
         if (!scanMutex.tryLock()) return
         try {
+            scanLocked()
+        } finally {
+            scanMutex.unlock()
+        }
+    }
+
+    private suspend fun scanLocked() {
         val folders = prefs.watchedFolders.first().map { Uri.parse(it) }
         if (folders.isEmpty()) {
             _scanState.value = ScanState.Failed("Aucun dossier sélectionné")
@@ -98,13 +105,14 @@ class LibraryRepository(
             if (e is CancellationException) throw e
             _scanState.value = ScanState.Failed(e.message ?: "Erreur inconnue")
         }
-        } finally {
-            scanMutex.unlock()
-        }
     }
 
+    /**
+     * Un dossier ajouté pendant une analyse en cours était ignoré (le verrou était déjà pris) :
+     * on attend la fin de l'analyse puis on relance pour inclure le nouveau dossier.
+     */
     suspend fun addFolderAndScan(uri: Uri) {
         prefs.addWatchedFolder(uri.toString())
-        rescanLibrary()
+        scanMutex.withLock { scanLocked() }
     }
 }

@@ -94,8 +94,18 @@ fun PodVaultApp() {
         }
     }
 
-    // Le lecteur plein écran affiche déjà ses propres commandes.
-    val showMiniPlayer = currentRoute?.startsWith("player/") != true
+    // Le lecteur plein écran affiche déjà ses propres commandes et occupe tout l'écran.
+    val onPlayerScreen = currentRoute?.startsWith("player/") == true
+    val showMiniPlayer = !onPlayerScreen
+
+    fun openPlayer(episodeId: Long, positionMs: Long? = null) {
+        navController.navigate(DetailRoutes.player(episodeId, positionMs)) {
+            // Un seul lecteur dans la pile : rouvrir le lecteur depuis une liste remplace l'ancien
+            // au lieu d'empiler des écrans qu'il faudrait refermer un par un.
+            popUpTo(DetailRoutes.PLAYER) { inclusive = true }
+            launchSingleTop = true
+        }
+    }
 
     CompositionLocalProvider(LocalNowPlaying provides nowPlaying) {
     Scaffold(
@@ -106,27 +116,27 @@ fun PodVaultApp() {
                     MiniPlayer(
                         state = playbackState,
                         progress = app.playbackController.progress,
-                        onClick = {
-                            playbackState.episodeId?.let {
-                                navController.navigate(DetailRoutes.player(it))
-                            }
-                        },
+                        onClick = { playbackState.episodeId?.let { openPlayer(it) } },
                         onTogglePlayPause = { app.playbackController.togglePlayPause() }
                     )
                 }
-                BottomNavBar(navController)
+                if (!onPlayerScreen) BottomNavBar(navController)
             }
         }
     ) { padding ->
         NavHost(
             navController = navController,
             startDestination = TopDestination.Home.route,
-            modifier = Modifier.padding(bottom = padding.calculateBottomPadding())
+            // Les insets déjà absorbés par la barre du bas ne doivent pas être ajoutés une seconde
+            // fois par les Scaffold des écrans (espace vide au-dessus de la barre de navigation).
+            modifier = Modifier
+                .padding(bottom = padding.calculateBottomPadding())
+                .consumeWindowInsets(PaddingValues(bottom = padding.calculateBottomPadding()))
         ) {
             composable(TopDestination.Home.route) {
                 HomeScreen(
-                    onEpisodeClick = { navController.navigate(DetailRoutes.player(it)) },
-                    onGoToSettings = { navController.navigate(TopDestination.Settings.route) },
+                    onEpisodeClick = { openPlayer(it) },
+                    onGoToSettings = { navController.navigateToTab(TopDestination.Settings.route) },
                     onOpenQueue = { navController.navigate(DetailRoutes.QUEUE) { launchSingleTop = true } },
                     onOpenDictionary = { navController.navigate(DetailRoutes.DICTIONARY) { launchSingleTop = true } }
                 )
@@ -138,18 +148,18 @@ fun PodVaultApp() {
                 )
             }
             composable(DetailRoutes.DUPLICATES) {
-                DuplicatesScreen(onBack = { navController.popBackStack() }, onEpisodeClick = { navController.navigate(DetailRoutes.player(it)) })
+                DuplicatesScreen(onBack = { navController.popBackStack() }, onEpisodeClick = { openPlayer(it) })
             }
             composable(TopDestination.Bookmarks.route) {
                 BookmarksScreen(onOpenEpisodeAt = { episodeId, positionMs ->
-                    navController.navigate(DetailRoutes.player(episodeId, positionMs))
+                    openPlayer(episodeId, positionMs)
                 })
             }
             composable(TopDestination.Search.route) {
                 SearchScreen(
-                    onEpisodeClick = { navController.navigate(DetailRoutes.player(it)) },
+                    onEpisodeClick = { openPlayer(it) },
                     onPodcastClick = { navController.navigate(DetailRoutes.podcast(it)) },
-                    onBookmarkClick = { episodeId, position -> navController.navigate(DetailRoutes.player(episodeId, position)) }
+                    onBookmarkClick = { episodeId, position -> openPlayer(episodeId, position) }
                 )
             }
             composable(TopDestination.Settings.route) {
@@ -166,7 +176,7 @@ fun PodVaultApp() {
                 PodcastDetailScreen(
                     podcastId = podcastId,
                     onBack = { navController.popBackStack() },
-                    onEpisodeClick = { navController.navigate(DetailRoutes.player(it)) }
+                    onEpisodeClick = { openPlayer(it) }
                 )
             }
             composable(
@@ -229,13 +239,7 @@ private fun BottomNavBar(navController: androidx.navigation.NavHostController) {
                     modifier = Modifier
                         .clip(RoundedCornerShape(24.dp))
                         .background(background)
-                        .clickable(role = Role.Tab) {
-                            navController.navigate(destination.route) {
-                                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        }
+                        .clickable(role = Role.Tab) { navController.navigateToTab(destination.route) }
                         .padding(horizontal = if (selected) 16.dp else 12.dp, vertical = 10.dp)
                         .animateContentSize(),
                     verticalAlignment = Alignment.CenterVertically
@@ -248,5 +252,13 @@ private fun BottomNavBar(navController: androidx.navigation.NavHostController) {
                 }
             }
         }
+    }
+}
+
+private fun androidx.navigation.NavHostController.navigateToTab(route: String) {
+    navigate(route) {
+        popUpTo(graph.findStartDestination().id) { saveState = true }
+        launchSingleTop = true
+        restoreState = true
     }
 }

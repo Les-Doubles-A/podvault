@@ -96,5 +96,16 @@ pub fn apply_theme(ctx: &egui::Context, mode: ThemeMode) {
     style.visuals = visuals;
     style.spacing.item_spacing = egui::vec2(8.0, 8.0);
     style.spacing.button_padding = egui::vec2(12.0, 6.0);
-    ctx.set_style(style);
+
+    // egui suit par défaut le thème de Windows et garde un style par thème : `set_style` seul
+    // ne remplaçait que l'un des deux. Avec Windows en clair et PodVault en sombre, les textes
+    // et boutons restaient en style clair (texte noir sur fond sombre). On fixe donc le thème
+    // choisi dans PodVault et on applique la palette aux deux styles.
+    let theme = match mode {
+        ThemeMode::Dark => egui::Theme::Dark,
+        ThemeMode::Light => egui::Theme::Light,
+    };
+    ctx.set_theme(theme);
+    ctx.set_style_of(egui::Theme::Dark, style.clone());
+    ctx.set_style_of(egui::Theme::Light, style);
 }
