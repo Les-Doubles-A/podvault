@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -205,7 +206,9 @@ fun PlayerScreen(
                 Cover(
                     playbackState.coverUri,
                     cornerRadius = 24.dp,
-                    modifier = Modifier.size(240.dp).graphicsLayer {
+                    // Pochette proportionnelle à l'écran (240 dp fixes paraissaient petits sur les
+                    // grands téléphones et débordaient presque sur les petits).
+                    modifier = Modifier.fillMaxWidth(0.78f).widthIn(max = 340.dp).aspectRatio(1f).graphicsLayer {
                         if (ambient && playbackState.isPlaying) {
                             val scale = 1f + 0.06f * audioLevel.value
                             scaleX = scale

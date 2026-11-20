@@ -24,19 +24,44 @@ pub fn render_player_screen(
     queue_len: usize,
     prefs: &Preferences,
     covers: &mut CoverCache,
+    resume_candidate: Option<&Episode>,
     actions: &mut Vec<AppAction>,
 ) {
     let Some(ep) = episode else {
         ui.vertical_centered(|ui| {
             ui.add_space(60.0);
             ui.heading("Aucun épisode en cours de lecture");
-            ui.label(
-                RichText::new("Choisissez un épisode depuis l'Accueil ou la Bibliothèque.")
-                    .color(p.on_surface_variant),
-            );
-            ui.add_space(12.0);
-            if accent_button(ui, p, "Aller à la bibliothèque").clicked() {
-                actions.push(AppAction::Navigate(Screen::Library));
+            ui.add_space(4.0);
+            if let Some(last) = resume_candidate {
+                // Proposer directement la reprise plutôt qu'un écran vide.
+                ui.label(
+                    RichText::new("Reprenez là où vous vous étiez arrêté :")
+                        .color(p.on_surface_variant),
+                );
+                ui.add_space(14.0);
+                cover_art(ui, covers, last.display_cover(), last.display_title(), 160.0, 14);
+                ui.add_space(10.0);
+                ui.label(RichText::new(last.display_title()).size(16.0).strong());
+                ui.add_space(12.0);
+                if accent_button(ui, p, "▶  Reprendre la lecture").clicked() {
+                    actions.push(AppAction::PlayEpisode {
+                        episode_id: last.id,
+                        position_ms: None,
+                    });
+                }
+                ui.add_space(6.0);
+                if ui.button("Parcourir la bibliothèque").clicked() {
+                    actions.push(AppAction::Navigate(Screen::Library));
+                }
+            } else {
+                ui.label(
+                    RichText::new("Choisissez un épisode depuis l'Accueil ou la Bibliothèque.")
+                        .color(p.on_surface_variant),
+                );
+                ui.add_space(12.0);
+                if accent_button(ui, p, "Aller à la bibliothèque").clicked() {
+                    actions.push(AppAction::Navigate(Screen::Library));
+                }
             }
         });
         return;
@@ -54,7 +79,7 @@ pub fn render_player_screen(
         ui.painter().rect_filled(rect, CornerRadius::same(16), tint);
     }
 
-    ScrollArea::vertical().show(ui, |ui| {
+    ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
         ui.horizontal(|ui| {
             if let Some(pod) = podcast {
                 if ui.button(format!("← {}", pod.display_title())).clicked() {
@@ -476,6 +501,7 @@ pub fn render_queue_screen(
 
     if queue.is_empty() {
         card_frame(p).show(ui, |ui| {
+            ui.set_min_width(ui.available_width());
             ui.label(
                 RichText::new("La file d'attente est vide. Ajoutez des épisodes avec « Lire ensuite » ou « + File ».")
                     .color(p.on_surface_variant),
@@ -484,13 +510,14 @@ pub fn render_queue_screen(
         return;
     }
 
-    ScrollArea::vertical().show(ui, |ui| {
+    ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
         for (idx, &ep_id) in queue.iter().enumerate() {
             let Some(ep) = ep_map.get(&ep_id) else {
                 continue;
             };
             let pod = pod_map.get(&ep.podcast_id).copied();
             card_frame(p).show(ui, |ui| {
+                ui.set_min_width(ui.available_width());
                 ui.horizontal(|ui| {
                     ui.label(
                         RichText::new(format!("{}.", idx + 1))

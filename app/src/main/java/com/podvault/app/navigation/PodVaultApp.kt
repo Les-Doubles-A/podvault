@@ -144,7 +144,8 @@ fun PodVaultApp() {
             composable(TopDestination.Library.route) {
                 LibraryScreen(
                     onPodcastClick = { navController.navigate(DetailRoutes.podcast(it)) },
-                    onDuplicatesClick = { navController.navigate(DetailRoutes.DUPLICATES) }
+                    onDuplicatesClick = { navController.navigate(DetailRoutes.DUPLICATES) },
+                    onAddFolder = { navController.navigateToTab(TopDestination.Settings.route) }
                 )
             }
             composable(DetailRoutes.DUPLICATES) {

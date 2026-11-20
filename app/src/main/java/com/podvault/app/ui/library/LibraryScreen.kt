@@ -9,6 +9,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -22,7 +24,7 @@ import com.podvault.app.ui.podVaultViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LibraryScreen(onPodcastClick: (Long) -> Unit, onDuplicatesClick: () -> Unit) {
+fun LibraryScreen(onPodcastClick: (Long) -> Unit, onDuplicatesClick: () -> Unit, onAddFolder: () -> Unit) {
     val viewModel = podVaultViewModel { LibraryViewModel(it) }
     val podcasts by viewModel.podcasts.collectAsStateWithLifecycle()
     val scanState by viewModel.scanState.collectAsStateWithLifecycle()
@@ -54,10 +56,36 @@ fun LibraryScreen(onPodcastClick: (Long) -> Unit, onDuplicatesClick: () -> Unit)
             }
 
             if (podcasts.isEmpty()) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(stringResource(R.string.empty_podcasts))
+                // État vide actionnable : un bouton mène directement à l'ajout d'un dossier.
+                Column(
+                    Modifier.fillMaxSize().padding(32.dp),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Icon(
+                        Icons.Filled.CreateNewFolder,
+                        contentDescription = null,
+                        modifier = Modifier.size(56.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    Text(stringResource(R.string.empty_podcasts), style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        stringResource(R.string.empty_library_message),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                    Spacer(Modifier.height(20.dp))
+                    Button(onClick = onAddFolder) { Text(stringResource(R.string.add_folder)) }
                 }
-            } else {
+            } else PullToRefreshBox(
+                // Tirer vers le bas relance l'analyse des dossiers.
+                isRefreshing = scanState is ScanState.Running,
+                onRefresh = { viewModel.rescan() },
+                modifier = Modifier.fillMaxSize()
+            ) {
                 LazyVerticalGrid(
                     columns = GridCells.Adaptive(minSize = 156.dp),
                     contentPadding = PaddingValues(16.dp),

@@ -26,7 +26,7 @@ pub fn render_home(
 ) {
     let podcast_map: HashMap<i64, &Podcast> = podcasts.iter().map(|pod| (pod.id, pod)).collect();
 
-    ScrollArea::vertical().show(ui, |ui| {
+    ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
         ui.add_space(4.0);
         ui.horizontal(|ui| {
             ui.heading(RichText::new("Accueil").size(26.0).strong());

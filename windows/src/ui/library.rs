@@ -93,75 +93,101 @@ pub fn render_library(
         }
     }
 
-    let avail_w = ui.available_width().max(220.0);
-    let card_w = 195.0;
-    let cols = ((avail_w / (card_w + 12.0)).floor() as usize).max(1);
+    // Grille responsive : les cartes occupent toute la largeur, ont toutes la même hauteur
+    // et sont alignées en haut (avant : rangées décalées et colonne vide à droite).
+    let gap = 14.0;
+    let avail_w = ui.available_width().max(220.0) - 12.0;
+    let min_card_w = 180.0;
+    let cols = (((avail_w + gap) / (min_card_w + gap)).floor() as usize).max(1);
+    let card_w = ((avail_w - gap * (cols as f32 - 1.0)) / cols as f32).floor();
+    let inner_w = card_w - 28.0;
 
-    ScrollArea::vertical().show(ui, |ui| {
+    ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
         for row in podcasts.chunks(cols) {
-            ui.horizontal(|ui| {
+            ui.with_layout(egui::Layout::left_to_right(egui::Align::TOP), |ui| {
+                ui.spacing_mut().item_spacing.x = gap;
                 for pod in row {
                     let (total, unplayed) = counts.get(&pod.id).copied().unwrap_or((0, 0));
                     let is_curr_pod = current_podcast_id == Some(pod.id);
-                    ui.allocate_ui_with_layout(
-                        egui::vec2(card_w, 260.0),
-                        egui::Layout::top_down(egui::Align::LEFT),
-                        |ui| {
-                            card_frame(p).show(ui, |ui| {
-                                ui.set_width(card_w - 28.0);
-                                let cover_resp = cover_art(
+                    let frame = card_frame(p).show(ui, |ui| {
+                        ui.set_width(inner_w);
+                        ui.vertical(|ui| {
+                        ui.set_width(inner_w);
+                        ui.spacing_mut().item_spacing.y = 4.0;
+                        let cover_resp = cover_art(
+                            ui,
+                            covers,
+                            pod.display_cover(),
+                            pod.display_title(),
+                            inner_w,
+                            10,
+                        );
+                        ui.add_space(6.0);
+                        ui.horizontal(|ui| {
+                            if is_curr_pod {
+                                now_playing_bars(ui, p, is_playing);
+                            }
+                            ui.add(
+                                egui::Label::new(
+                                    RichText::new(pod.display_title()).strong().size(14.5),
+                                )
+                                .truncate()
+                                .selectable(false),
+                            );
+                        });
+                        ui.add(
+                            egui::Label::new(
+                                RichText::new(pod.display_author().unwrap_or("Auteur inconnu"))
+                                    .color(p.on_surface_variant)
+                                    .size(12.0),
+                            )
+                            .truncate()
+                            .selectable(false),
+                        );
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                RichText::new(format!("{total} épisode(s)"))
+                                    .size(11.5)
+                                    .color(p.on_surface_variant),
+                            );
+                            if unplayed > 0 {
+                                pill_badge(
                                     ui,
-                                    covers,
-                                    pod.display_cover(),
-                                    pod.display_title(),
-                                    card_w - 28.0,
-                                    10,
+                                    p.primary_container,
+                                    p.on_primary_container,
+                                    &format!("{unplayed} non lu(s)"),
                                 );
-                                ui.add_space(8.0);
-                                ui.horizontal(|ui| {
-                                    if is_curr_pod {
-                                        now_playing_bars(ui, p, is_playing);
-                                    }
-                                    let title_label = ui.add(
-                                        egui::Label::new(
-                                            RichText::new(pod.display_title()).strong().size(14.0),
-                                        )
-                                        .truncate()
-                                        .sense(egui::Sense::click()),
-                                    );
-                                    if title_label.clicked() || cover_resp.clicked() {
-                                        actions.push(AppAction::Navigate(Screen::PodcastDetail(pod.id)));
-                                    }
-                                });
-                                if let Some(author) = pod.display_author() {
-                                    ui.add(
-                                        egui::Label::new(
-                                            RichText::new(author)
-                                                .color(p.on_surface_variant)
-                                                .size(12.0),
-                                        )
-                                        .truncate(),
-                                    );
-                                }
-                                ui.add_space(4.0);
-                                ui.horizontal(|ui| {
-                                    ui.label(
-                                        RichText::new(format!("{total} ép. · {unplayed} non lu(s)"))
-                                            .size(11.5)
-                                            .color(p.on_surface_variant),
-                                    );
-                                });
-                            });
-                        },
+                            }
+                        });
+                        cover_resp
+                        })
+                        .inner
+                    });
+                    // Toute la carte est cliquable, avec un retour visuel au survol.
+                    let card = ui.interact(
+                        frame.response.rect,
+                        ui.id().with(("podcast_card", pod.id)),
+                        egui::Sense::click(),
                     );
+                    if card.hovered() {
+                        ui.painter().rect_stroke(
+                            frame.response.rect,
+                            egui::CornerRadius::same(12),
+                            egui::Stroke::new(1.5_f32, p.accent),
+                            egui::StrokeKind::Inside,
+                        );
+                        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                    }
+                    if card.clicked() || frame.inner.clicked() {
+                        actions.push(AppAction::Navigate(Screen::PodcastDetail(pod.id)));
+                    }
                 }
             });
-            ui.add_space(10.0);
+            ui.add_space(gap);
         }
     });
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn render_podcast_detail(
     ui: &mut Ui,
     p: Palette,
@@ -289,7 +315,7 @@ pub fn render_podcast_detail(
         EpisodeSort::DurationDesc => filtered.sort_by(|a, b| b.duration_ms.cmp(&a.duration_ms)),
     }
 
-    ScrollArea::vertical().show(ui, |ui| {
+    ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
         if filtered.is_empty() {
             ui.label(
                 RichText::new("Aucun épisode ne correspond à ce filtre.")
@@ -443,7 +469,7 @@ pub fn render_duplicates(
         return;
     }
 
-    ScrollArea::vertical().show(ui, |ui| {
+    ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
         for group in groups {
             card_frame(p).show(ui, |ui| {
                 ui.label(RichText::new(&group.reason).strong().color(p.accent));

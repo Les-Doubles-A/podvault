@@ -989,6 +989,10 @@ impl eframe::App for PodVaultApp {
                 }
             });
         }
+        // Ctrl+F ouvre la recherche, même pendant une saisie.
+        if ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::F)) {
+            actions.push(AppAction::Navigate(Screen::Search));
+        }
 
         let is_playing = self.audio.as_ref().map(|a| a.is_playing()).unwrap_or(false);
         let position_ms = self.audio.as_ref().map(|a| a.position_ms()).unwrap_or(0);
@@ -1202,6 +1206,17 @@ impl eframe::App for PodVaultApp {
                     Screen::Player => {
                         let ep = self.current_episode().cloned();
                         let pod = self.current_podcast().cloned();
+                        // Épisode entamé le plus récent, proposé quand rien n'est chargé.
+                        let resume = if ep.is_none() {
+                            self.states
+                                .values()
+                                .filter(|s| !s.completed && s.position_ms > 0)
+                                .max_by_key(|s| s.last_played_at)
+                                .and_then(|s| self.episodes.iter().find(|e| e.id == s.episode_id && !e.is_missing))
+                                .cloned()
+                        } else {
+                            None
+                        };
                         player::render_player_screen(
                             ui,
                             p,
@@ -1217,6 +1232,7 @@ impl eframe::App for PodVaultApp {
                             self.queue.len(),
                             &self.prefs,
                             &mut self.covers,
+                            resume.as_ref(),
                             &mut actions,
                         );
                     }

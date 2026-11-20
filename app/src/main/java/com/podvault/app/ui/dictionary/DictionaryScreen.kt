@@ -58,7 +58,7 @@ private object DictionaryClient {
         "hyperonymes", "hyponymes", "homophones", "paronymes", "notes"
     )
 
-    private const val USER_AGENT = "PodVault/0.4.2 (https://github.com/Les-Doubles-A/podvault)"
+    private const val USER_AGENT = "PodVault/0.4.3 (https://github.com/Les-Doubles-A/podvault)"
 
     suspend fun suggest(rawQuery: String): List<String> = withContext(Dispatchers.IO) {
         val cleaned = rawQuery.trim()

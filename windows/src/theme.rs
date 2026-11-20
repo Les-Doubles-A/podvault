@@ -89,7 +89,9 @@ pub fn apply_theme(ctx: &egui::Context, mode: ThemeMode) {
     visuals.widgets.active.bg_fill = p.primary_container;
     visuals.widgets.active.weak_bg_fill = p.primary_container;
     visuals.widgets.active.bg_stroke = Stroke::new(1.5_f32, p.accent);
-    visuals.widgets.active.fg_stroke = Stroke::new(1.0_f32, p.on_primary_container);
+    // egui utilise cette couleur pour le texte « strong » et les titres : avec la teinte menthe
+    // du conteneur primaire, tous les titres paraissaient colorés et la hiérarchie se perdait.
+    visuals.widgets.active.fg_stroke = Stroke::new(1.0_f32, p.on_surface);
     visuals.widgets.active.corner_radius = CornerRadius::same(8);
 
     let mut style = Style::default();

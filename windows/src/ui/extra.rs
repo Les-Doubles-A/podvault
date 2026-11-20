@@ -27,6 +27,7 @@ pub fn render_bookmarks(
 
     if bookmarks.is_empty() {
         card_frame(p).show(ui, |ui| {
+            ui.set_min_width(ui.available_width());
             ui.label(
                 RichText::new(
                     "Aucun point mémoire enregistré. Depuis le lecteur, cliquez sur « Créer un point mémoire » pour mémoriser un passage.",
@@ -37,11 +38,12 @@ pub fn render_bookmarks(
         return;
     }
 
-    ScrollArea::vertical().show(ui, |ui| {
+    ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
         for bm in bookmarks {
             let ep = ep_map.get(&bm.episode_id).copied();
             let pod = ep.and_then(|e| pod_map.get(&e.podcast_id).copied());
             card_frame(p).show(ui, |ui| {
+                ui.set_min_width(ui.available_width());
                 ui.horizontal(|ui| {
                     if accent_button(ui, p, &format!("▶ {}", format_duration_ms(bm.position_ms)))
                         .clicked()
@@ -95,8 +97,10 @@ pub fn render_search(
     ui.horizontal(|ui| {
         ui.add(
             egui::TextEdit::singleline(query)
-                .hint_text("Rechercher un podcast, un épisode ou un point mémoire...")
-                .desired_width(420.0),
+                .hint_text("🔍  Rechercher un podcast, un épisode ou un point mémoire…")
+                .desired_width((ui.available_width() - 90.0).max(240.0))
+                .font(egui::TextStyle::Body)
+                .margin(egui::Margin::symmetric(12, 10)),
         );
         if !query.is_empty() && ui.button("Effacer").clicked() {
             query.clear();
@@ -155,7 +159,7 @@ pub fn render_search(
         .take(20)
         .collect();
 
-    ScrollArea::vertical().show(ui, |ui| {
+    ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
         if !matching_podcasts.is_empty() {
             ui.label(
                 RichText::new(format!("Podcasts ({})", matching_podcasts.len()))
@@ -165,6 +169,7 @@ pub fn render_search(
             ui.add_space(4.0);
             for pod in matching_podcasts {
                 card_frame(p).show(ui, |ui| {
+                    ui.set_min_width(ui.available_width());
                     ui.horizontal(|ui| {
                         ui.label(RichText::new(pod.display_title()).strong());
                         if let Some(a) = pod.display_author() {
@@ -195,6 +200,7 @@ pub fn render_search(
                     .map(|pod| pod.display_title())
                     .unwrap_or("");
                 card_frame(p).show(ui, |ui| {
+                    ui.set_min_width(ui.available_width());
                     ui.horizontal(|ui| {
                         ui.vertical(|ui| {
                             ui.label(RichText::new(ep.display_title()).strong());
@@ -235,6 +241,7 @@ pub fn render_search(
             ui.add_space(4.0);
             for bm in matching_bookmarks {
                 card_frame(p).show(ui, |ui| {
+                    ui.set_min_width(ui.available_width());
                     ui.horizontal(|ui| {
                         ui.label(
                             RichText::new(bm.title.as_deref().unwrap_or("Point mémoire")).strong(),
@@ -294,20 +301,36 @@ pub fn render_statistics(
         }
     }
 
-    ScrollArea::vertical().show(ui, |ui| {
-        ui.horizontal_wrapped(|ui| {
-            stat_tile(ui, p, "Temps total écouté", &format_human_duration_ms(total_listened_ms));
-            stat_tile(ui, p, "Épisodes terminés", &format!("{completed_count} / {}", episodes.len()));
-            stat_tile(ui, p, "Podcasts", &podcasts.len().to_string());
-            stat_tile(ui, p, "Favoris", &favorites_count.to_string());
-            stat_tile(ui, p, "Points mémoire", &bookmarks.len().to_string());
-            stat_tile(ui, p, "Série en cours", &format!("{streak} jour(s)"));
-        });
+    ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+        // Tuiles en grille de largeur fixe : avec un simple retour à la ligne, la rangée
+        // débordait à droite et élargissait toutes les cartes suivantes.
+        let tiles = [
+            ("Temps total écouté", format_human_duration_ms(total_listened_ms)),
+            ("Épisodes terminés", format!("{completed_count} / {}", episodes.len())),
+            ("Podcasts", podcasts.len().to_string()),
+            ("Favoris", favorites_count.to_string()),
+            ("Points mémoire", bookmarks.len().to_string()),
+            ("Série en cours", format!("{streak} jour(s)")),
+        ];
+        let gap = 12.0;
+        let avail = ui.available_width() - 4.0;
+        let cols = if avail > 900.0 { 6 } else if avail > 520.0 { 3 } else { 2 };
+        let tile_w = ((avail - gap * (cols as f32 - 1.0)) / cols as f32).floor();
+        for row in tiles.chunks(cols) {
+            ui.with_layout(egui::Layout::left_to_right(egui::Align::TOP), |ui| {
+                ui.spacing_mut().item_spacing.x = gap;
+                for (label, value) in row {
+                    stat_tile(ui, p, label, value, tile_w);
+                }
+            });
+            ui.add_space(gap - 8.0);
+        }
 
         ui.add_space(14.0);
 
         // Graphique des 14 derniers jours
         card_frame(p).show(ui, |ui| {
+            ui.set_min_width(ui.available_width());
             ui.label(RichText::new("Activité des 14 derniers jours").size(16.0).strong());
             ui.add_space(10.0);
 
@@ -377,6 +400,7 @@ pub fn render_statistics(
 
         if !top.is_empty() {
             card_frame(p).show(ui, |ui| {
+                ui.set_min_width(ui.available_width());
                 ui.label(RichText::new("Podcasts les plus écoutés").size(16.0).strong());
                 ui.add_space(8.0);
                 for (pod, ms) in top {
@@ -398,11 +422,15 @@ pub fn render_statistics(
     });
 }
 
-fn stat_tile(ui: &mut Ui, p: Palette, label: &str, value: &str) {
+fn stat_tile(ui: &mut Ui, p: Palette, label: &str, value: &str, width: f32) {
     card_frame(p).show(ui, |ui| {
-        ui.set_min_width(145.0);
-        ui.label(RichText::new(label).color(p.on_surface_variant).size(12.0));
-        ui.label(RichText::new(value).color(p.accent).size(20.0).strong());
+        let inner = width - 28.0;
+        ui.set_width(inner);
+        ui.vertical(|ui| {
+            ui.set_width(inner);
+            ui.add(egui::Label::new(RichText::new(label).color(p.on_surface_variant).size(12.0)).truncate());
+            ui.label(RichText::new(value).color(p.accent).size(22.0).strong());
+        });
     });
 }
 
@@ -416,9 +444,10 @@ pub fn render_settings(
     ui.heading(RichText::new("Paramètres").size(26.0).strong());
     ui.add_space(10.0);
 
-    ScrollArea::vertical().show(ui, |ui| {
+    ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
         // Dossiers surveillés
         card_frame(p).show(ui, |ui| {
+            ui.set_min_width(ui.available_width());
             ui.horizontal(|ui| {
                 ui.label(RichText::new("Dossiers surveillés").size(16.0).strong());
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -456,6 +485,7 @@ pub fn render_settings(
 
         // Lecture
         card_frame(p).show(ui, |ui| {
+            ui.set_min_width(ui.available_width());
             ui.label(RichText::new("Lecture").size(16.0).strong());
             ui.add_space(6.0);
 
@@ -514,6 +544,7 @@ pub fn render_settings(
 
         // Apparence
         card_frame(p).show(ui, |ui| {
+            ui.set_min_width(ui.available_width());
             ui.label(RichText::new("Apparence").size(16.0).strong());
             ui.add_space(6.0);
             ui.horizontal(|ui| {
@@ -548,6 +579,7 @@ pub fn render_settings(
 
         // Sauvegarde JSON
         card_frame(p).show(ui, |ui| {
+            ui.set_min_width(ui.available_width());
             ui.label(RichText::new("Sauvegarde et restauration").size(16.0).strong());
             ui.label(
                 RichText::new(
@@ -571,6 +603,7 @@ pub fn render_settings(
 
         // À propos
         card_frame(p).show(ui, |ui| {
+            ui.set_min_width(ui.available_width());
             ui.label(RichText::new("À propos de PodVault").size(16.0).strong());
             ui.label(
                 RichText::new(format!(
@@ -675,7 +708,7 @@ pub fn render_dictionary(
     match result {
         Some(Ok(res)) => {
             if let Some(entry) = &res.entry {
-                ScrollArea::vertical().show(ui, |ui| {
+                ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
                     if let Some(orig) = &res.corrected_from {
                         ui.label(
                             RichText::new(format!("Résultat le plus proche pour « {orig} »"))
@@ -701,6 +734,7 @@ pub fn render_dictionary(
 
                     for section in &entry.sections {
                         card_frame(p).show(ui, |ui| {
+                            ui.set_min_width(ui.available_width());
                             ui.set_min_width(ui.available_width().min(680.0));
                             pill_badge(
                                 ui,
